@@ -6,8 +6,6 @@ from scipy import sparse
 from scipy.sparse.linalg import eigsh
 from scipy.sparse.linalg import LinearOperator
 import matplotlib.pyplot as plt
-import matplotlib.tri as tri
-
 def q_matrix(size):
     qmat=np.zeros((size,size),float)
     for i in range(size):
@@ -19,69 +17,54 @@ def q_matrix(size):
             qmat[i,ip]/=np.sqrt(2.)
     return qmat
 
+def delta(i,j):
+    if i==j:
+        return 1.
+    else:
+        return 0.
+
+def mv(v):
+    N =len(v)
+    u=v.copy()
+    u=np.dot(HDVR,v)
+    return u
+
 def Ea_v(v): # act with diagonal Ea term
     N =len(v)
-    #u=v.copy()
-    u=np.multiply(Elist_vec,v)
-    #for a in range(na):
-    #    for i1 in range(n1):
-    #        for i2 in range(n2):
-    #            u[((a*n1+i1)*n2+i2)]=Elist[a]*v[((a*n1+i1)*n2+i2)]
+    u=v.copy()
+    for a in range(na):
+        for i1 in range(n1):
+            for i2 in range(n2):
+                u[((a*n1+i1)*n2+i2)]=Elist[a]*v[((a*n1+i1)*n2+i2)]
     return u
 def h01_v(v): # act with  h01 term
     N =len(v)   
     u=v.copy()  
-    vtemp=np.zeros((n1,n2*na),float)
     for a in range(na):
         for i2 in range(n2):
             for i1 in range(n1):
-                vtemp[i1,a*n2+i2]=v[((a*n1+i1)*n2+i2)]
-    # use blas through dot?
-    utemp=np.dot(h0D1_dvr,vtemp)
-    for a in range(na):
-        for i1 in range(n1):
-            for i2 in range(n2):
-                u[((a*n1+i1)*n2+i2)]=utemp[i1,a*n2+i2]
-    #for a in range(na):
-    #    for i2 in range(n2):
-    #        for i1 in range(n1):
-    #            u[((a*n1+i1)*n2+i2)]=0.
-    #            for i1p in range(n1):
-    #                u[((a*n1+i1)*n2+i2)]+=h0D1_dvr[i1,i1p]*v[((a*n1+i1p)*n2+i2)]
+                for i1p in range(n1):
+                    u[((a*n1+i1)*n2+i2)]+=h0D1_dvr[i1,i1p]*v[((a*n1+i1p)*n2+i2)]
     return u
 def h02_v(v): # act with  h02 term
     #  optimize with blas
     N =len(v)
-    u=v.copy()  
-    vtemp=np.zeros((n2,n1*na),float)
-    for a in range(na):
-        for i2 in range(n2):
-            for i1 in range(n1):
-                vtemp[i2,a*n1+i1]=v[((a*n1+i1)*n2+i2)]
-    # use blas through dot?
-    utemp=np.dot(h0D2_dvr,vtemp)
+    u=v.copy()
     for a in range(na):
         for i1 in range(n1):
             for i2 in range(n2):
-                u[((a*n1+i1)*n2+i2)]=utemp[i2,a*n1+i1]    
-    #for a in range(na):
-    #for i1 in range(n1):
-    #        for i2 in range(n2):
-    #            u[((a*n1+i1)*n2+i2)]=0.
-    #            for i2p in range(n2):
-    #                u[((a*n1+i1)*n2+i2)]+=h0D2_dvr[i2,i2p]*v[((a*n1+i1)*n2+i2p)]
+                for i2p in range(n2):
+                    u[((a*n1+i1)*n2+i2)]+=h0D2_dvr[i2,i2p]*v[((a*n1+i1)*n2+i2p)]
     return u
 def q1_v(v): #act with displaced q1
     N =len(v)
-
-    u=np.multiply(lambD_grid1_vec,v)
-    #u=v.copy()
-    #for i1 in range(n1):
-    #    for i2 in range(n2):
-    #        a=0
-    #        u[((a*n1+i1)*n2+i2)]=lamb*grid1[i1]*v[((a*n1+i1)*n2+i2)]
-    #        a=1
-    #        u[((a*n1+i1)*n2+i2)]=(-lamb*grid1[i1]*v[((a*n1+i1)*n2+i2)])
+    u=v.copy()
+    for i1 in range(n1):
+        for i2 in range(n2):
+            a=0
+            u[((a*n1+i1)*n2+i2)]=lamb*grid1[i1]*v[((a*n1+i1)*n2+i2)]
+            a=1
+            u[((a*n1+i1)*n2+i2)]=(-lamb*grid1[i1]*v[((a*n1+i1)*n2+i2)])
     return u
 def q2_v(v): #act with displaced q1
     N =len(v)
@@ -145,7 +128,16 @@ N=n1*n2*na
 # modes only basis size
 n12=n1*n2
 # allocate memory for full hamiltonian
+H=np.zeros((N,N),float)
+HDVR=np.zeros((N,N),float)
 # allocate memory for the h0 hamiltonian
+h0D=np.zeros((n12),float) # diagonal matrix
+h0JT=np.zeros((n12),float) # diagonal matrix
+
+for i1 in range(n1):        
+    for i2 in range(n2):
+        h0D[i1*n2+i2]=w1*(float(i1)+.5)+w2*(float(i2)+.5)
+        h0JT[i1*n2+i2]=w1JT*(float(i1)+.5)+w2JT*(float(i2)+.5)
 
 h0D1=np.zeros((n1,n1),float) # diagonal matrix
 h0JT1=np.zeros((n1,n1),float) # diagonal matrix
@@ -182,8 +174,7 @@ fig_S, ax_S = plt.subplots()
 fig_A, ax_A = plt.subplots()
 fig_rho1, ax_rho1 = plt.subplots()
 fig_rho2, ax_rho2 = plt.subplots()
-fig_rho12 = plt.figure()
-ax_rho12 =plt.axes(projection='3d')
+fig_rho12, ax_rho12 = plt.subplots()
 fig_rhoa, ax_rhoa = plt.subplots()
 
 # choice of model
@@ -193,22 +184,42 @@ model='Displaced'
 count=0
 #build full Hamiltonian
 for s in range(nsystems):
-
-    #prepare vectors for fast multiplies
-    # allocate memory for Ea_list
-    Elist_vec=np.zeros(N,float)
-    lambD_grid1_vec=np.zeros(N,float)
-    gD_grid2_vec=np.zeros(N,float)
     for a in range(na):
         for i1 in range(n1):
             for i2 in range(n2):
-                Elist_vec[((a*n1+i1)*n2+i2)]=Elist[a]
-                if (a==0):
-                    lambD_grid1_vec[((a*n1+i1)*n2+i2)]=lamb*grid1[i1]
-                if (a==1):
-                    lambD_grid1_vec[((a*n1+i1)*n2+i2)]=(-lamb)*grid1[i1]
-                #gD_grid2_vec[((a*n1+i1)*n2+i2)]=g_list[s]*grid2[i2]
+                for ap in range(na):
+                    for i1p in range(n1):         
+                        for i2p in range(n2):
+                            H[(a*n1+i1)*n2+i2,(ap*n1+i1p)*n2+i2p]=0.
+                            HDVR[(a*n1+i1)*n2+i2,(ap*n1+i1p)*n2+i2p]=0.
+                            #displaced H
+                            if model=='Displaced':
+                            #    H[(a*n1+i1)*n2+i2,(ap*n1+i1p)*n2+i2p]=(Elist[a]+h0D[i1*n2+i2])*delta(a,ap)*delta(i1,i1p)*delta(i2,i2p)\
+                            #    +q1sign[a]*lamb*qmat1[i1,i1p]*delta(a,ap)*delta(i2,i2p)\
+                            #    +g_list[s]*qmat2[i2,i2p]*delta(i1,i1p)*(1.-delta(a,ap))
 
+                                HDVR[(a*n1+i1)*n2+i2,(ap*n1+i1p)*n2+i2p]=(Elist[a])*delta(a,ap)*delta(i1,i1p)*delta(i2,i2p)\
+                                +h0D1_dvr[i1,i1p]*delta(a,ap)*delta(i2,i2p)\
+                                +h0D2_dvr[i2,i2p]*delta(a,ap)*delta(i1,i1p)\
+                                +q1sign[a]*lamb*grid1[i1]*delta(a,ap)*delta(i1,i1p)*delta(i2,i2p)\
+                                +g_list[s]*grid2[i2]*delta(i1,i1p)*delta(i2,i2p)*(1.-delta(a,ap))
+                            if model=='Jahn_Teller':
+                            #    H[(a*n1+i1)*n2+i2,(ap*n1+i1p)*n2+i2p]=(EJT[s]+h0JT[i1*n2+i2])*delta(a,ap)*delta(i1,i1p)*delta(i2,i2p)\
+                            #    +q1sign[a]*lambdaJT[s]*qmat1[i1,i1p]*delta(a,ap)*delta(i2,i2p)\
+                            #    +lambdaJT[s]*qmat2[i2,i2p]*delta(i1,i1p)*(1.-delta(a,ap))
+
+                                HDVR[(a*n1+i1)*n2+i2,(ap*n1+i1p)*n2+i2p]=(EJT[s]+h0JT[i1*n2+i2])*delta(a,ap)*delta(i1,i1p)*delta(i2,i2p)\
+                                +q1sign[a]*lambdaJT[s]*qmat1[i1,i1p]*delta(a,ap)*delta(i2,i2p)\
+                                +lambdaJT[s]*qmat2[i2,i2p]*delta(i1,i1p)*(1.-delta(a,ap))
+
+    print (count,'none-zero matrix elements out of',N*N)
+# diagonalize   
+
+
+  #  evals, evecs = np.linalg.eigh(H)
+    evals, evecs = np.linalg.eigh(HDVR)
+
+    A = LinearOperator((N,N), matvec=mv)
     AEa = LinearOperator((N,N), matvec=Ea_v)
     Ah01 = LinearOperator((N,N), matvec=h01_v)
     Ah02 = LinearOperator((N,N), matvec=h02_v)
@@ -217,13 +228,11 @@ for s in range(nsystems):
 
     A_total=AEa+Ah01+Ah02+Aq1+Aq2
 
-    kmax=100
-    niter=100
-    #evals, evecs = eigsh(A_total, k=kmax,which = 'SA', maxiter=niter)
-    evals, evecs = eigsh(A_total, k=kmax,which = 'SA')
+    kmax=6
+    eigenvalues, eigenvectors = eigsh(A_total, k=kmax,which = 'SA')
 
-    #for i in range(kmax):
-    #    print(evals[i])
+    for i in range(kmax):
+        print(evals[i],eigenvalues[i])
 
 
     delta_E=evals[1]-evals[0]
@@ -241,7 +250,7 @@ for s in range(nsystems):
     nT=1 # number of temperature values
     deltaT=(Tmax-Tmin)/float(nT)
     T=np.zeros(nT,float)
-    Probs=np.zeros((nT,kmax),float)
+    Probs=np.zeros((nT,N),float)
     Z=np.zeros(nT,float)
     E=np.zeros(nT,float)
     E2=np.zeros(nT,float)
@@ -253,7 +262,7 @@ for s in range(nsystems):
         T[t]=300.
     # estimators, <E>, Cv, S, and Z
         Z[t]=0.
-        for i in range(kmax):
+        for i in range(N):
             Ei=(evals[i]-evals[0])/eV_per_K
             Z[t]+=np.exp(-Ei/T[t])
             E[t]+=np.exp(-Ei/T[t])*Ei
@@ -263,7 +272,7 @@ for s in range(nsystems):
         Cv[t]=(E2[t]-E[t]**2)/(T[t]**2)
         A[t]=-T[t]*np.log(Z[t])
         S[t]=(E[t]-A[t])/T[t]
-        for i in range(kmax):
+        for i in range(N):
             Ei=(evals[i]-evals[0])/eV_per_K
             Probs[t,i]=np.exp(-Ei/T[t])/Z[t]
 
@@ -272,11 +281,10 @@ for s in range(nsystems):
     rho1=np.zeros((n1),float)
     rho2=np.zeros((n2),float)
     rho12=np.zeros((n1,n2),float)
-    w12=np.zeros((n1,n2),float)
     rhoa=np.zeros((na,na),float)
 
 
-    for i in range(kmax):
+    for i in range(100):
         Ei=(evals[i]-evals[0])/eV_per_K
         for a in range(na):
             for ap in range(na):
@@ -293,15 +301,13 @@ for s in range(nsystems):
                     for a in range(na):
                         rho2[i2]+=(evecs[(a*n1+i1)*n2+i2,i]**2)*np.exp(-Ei/T[-1])
         for i1 in range(n1):
-            for i2 in range(n2):
-                for a in range(na):
-                    rho12[i1,i2]+=(evecs[(a*n1+i1)*n2+i2,i]**2)*np.exp(-Ei/T[-1])
+                for i2 in range(n2):
+                        for a in range(na):
+                            rho12[i1,i2]+=(evecs[(a*n1+i1)*n2+i2,i]**2)*np.exp(-Ei/T[-1])
     rho1=(1./Z[-1])*rho1
     rho2=(1./Z[-1])*rho2
     rho12=(1./Z[-1])*rho12
     rhoa=(1./Z[-1])*rhoa
-
-    w12=-T[-1]*eV_per_K*np.log(rho12)
 
     print('rhoa(a,b)= ')
     print(rhoa)
@@ -320,23 +326,12 @@ for s in range(nsystems):
     for i2 in range(n2):
         h2[i2]=rho2[i2]
         # multiply by gauss hermite weight
-        h2[i2]*=np.exp(-grid2[i2]**2)/(np.sqrt(np.pi)*T2[0,i2]**2)
+        h2[i2]*=np.exp(-grid1[i2]**2)/(np.sqrt(np.pi)*T2[0,i2]**2)
     ax_rho2.plot(grid2,h2,label=labels+' T='+str(T[-1])+' K')
     ax_rho2.legend(loc="upper right")
 
-    for i1 in range(n1):
-        for i2 in range(n2):
-        # multiply by gauss hermite weight
-            rho12[i1,i2]*=((np.exp(-grid2[i2]**2)/(np.sqrt(np.pi)*T2[0,i2]**2))*(np.exp(-grid1[i1]**2)/(np.sqrt(np.pi)*T1[0,i1]**2)))
-    
-    if (s==4):
 
-        q1, q2 = np.meshgrid(grid1, grid2)
-        plt.contourf(q1,q2,w12,20)
-        plt.colorbar();
-        plt.savefig('p12.png')
-
-    ax_EV.plot([i for i in range(kmax)],(evals-evals[0])/eV_per_K,label=labels)
+    ax_EV.plot([i for i in range(N)],(evals-evals[0])/eV_per_K,label=labels)
     ax_EV.legend(loc="upper left")
     ax_E.plot(T,E,label=labels)
     ax_E.legend(loc="upper left")
@@ -355,7 +350,6 @@ ax_S.set(title='S vs T '+str(model),xlabel='T (K)',ylabel='S/kB')
 
 fig_rho1.savefig('rho1_'+str(model)+'.png')
 fig_rho2.savefig('rho2_'+str(model)+'.png')
-fig_rho12.savefig('rho12_'+str(model)+'.png')
 
 fig_EV.savefig('Evsn_'+str(model)+'.png')
 fig_E.savefig('EvsT_'+str(model)+'.png')
