@@ -304,7 +304,6 @@ def main(model, plotting=False):
             h2[i2]*=np.exp(-grid2[i2]**2)/(np.sqrt(np.pi)*T2[0,i2]**2)
             rho2_out.write(str(grid2[i2])+' '+str(h2[i2])+'\n')
 
-            
         for i1 in range(n1):
             for i2 in range(n2):
             # multiply by gauss hermite weight
