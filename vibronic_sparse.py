@@ -320,12 +320,10 @@ def main(model, plotting=False):
         w12_out.close()
         rhoa_out.close()
 
-
-
 if (__name__ == "__main__"):
 
     # choose the model
-    model = ['Displaced', 'Jahn_Teller'][1]
+    model = ['Displaced', 'Jahn_Teller'][0]
     system_index = 5 # 0..5 for Displaced and Jahn-Teller
 
     # run
