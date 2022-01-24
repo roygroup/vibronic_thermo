@@ -310,6 +310,10 @@ def main(model, plotting=False):
                 rho12[i1,i2]*=((np.exp(-grid2[i2]**2)/(np.sqrt(np.pi)*T2[0,i2]**2))*(np.exp(-grid1[i1]**2)/(np.sqrt(np.pi)*T1[0,i1]**2)))
                 rho12_out.write(str(grid1[i1])+' '+str(grid2[i2])+' '+str(rho12[i1,i2])+'\n')
                 w12_out.write(str(grid1[i1])+' '+str(grid2[i2])+' '+str(w12[i1,i2])+'\n')
+
+        for a in range(na):
+            for ap in range(na):
+                rhoa_out.write(str(a)+' '+str(ap)+' '+str(rhoa[a,ap])+'\n')
         rho1_out.close()
         rho2_out.close()
         rho12_out.close()
