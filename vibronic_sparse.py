@@ -99,7 +99,7 @@ def main(model, plotting=False):
                 u[(((a-1)*n1+i1)*n2+i2)]=param_times_grid2[i2]*v[((a*n1+i1)*n2+i2)]
         return u
  # basis sizes (store in dictionary for easy passing to functions)
-    n1, n2, na = 20, 20, 2
+    n1, n2, na = 40, 40, 2
     basis = {'n1': n1, 'n2': n2, 'a': na}
 
     # total size of product basis
@@ -184,8 +184,8 @@ def main(model, plotting=False):
 
     # choose temperatures between 0.1 and 10 time the characteristic Theta=delta_E/eV_per_K
     Tmin=1.
-    Tmax=1000.
-    nT=30 # number of temperature values
+    Tmax=500.
+    nT=1000 # number of temperature values
     deltaT=(Tmax-Tmin)/float(nT)
     T=np.zeros(nT,float)
     Probs=np.zeros((nT,kmax),float)
@@ -246,6 +246,7 @@ def main(model, plotting=False):
     rho12=np.zeros((n1,n2),float)
     w12=np.zeros((n1,n2),float)
     rhoa=np.zeros((na,na),float)
+    
 
     # calculate distributions for each temperature
 
@@ -301,7 +302,7 @@ def main(model, plotting=False):
             h2[i2]=rho2[i2]
         # multiply by gauss hermite weight
             h2[i2]*=np.exp(-grid2[i2]**2)/(np.sqrt(np.pi)*T2[0,i2]**2)
-            rho2_out.write(str(grid2[i2])+' '+str(h1[i1])+'\n')
+            rho2_out.write(str(grid2[i2])+' '+str(h2[i2])+'\n')
 
             
         for i1 in range(n1):
@@ -322,7 +323,7 @@ if (__name__ == "__main__"):
 
     # choose the model
     model = ['Displaced', 'Jahn_Teller'][1]
-    system_index = 1 # 0..5 for Displaced and Jahn-Teller
+    system_index = 5 # 0..5 for Displaced and Jahn-Teller
 
     # run
     main(model, system_index)
