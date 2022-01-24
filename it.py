@@ -5,6 +5,7 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import eigsh
 from scipy.sparse.linalg import LinearOperator
+from scipy.linalg.blas  import dgemm
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 
@@ -32,12 +33,17 @@ def h01_v(v): # act with  h01 term
     N =len(v)   
     u=v.copy()  
     vtemp=np.zeros((n1,n2*na),float)
+    utemp=np.zeros((n1,n2*na),float)
     for a in range(na):
         for i2 in range(n2):
             for i1 in range(n1):
                 vtemp[i1,a*n2+i2]=v[((a*n1+i1)*n2+i2)]
     # use blas through dot?
-    utemp=np.dot(h0D1_dvr,vtemp)
+    #utemp=np.dot(h0D1_dvr,vtemp)
+    utemp=np.matmul(h0D1_dvr,vtemp)
+    # direct blas, no real gain
+    #utemp=dgemm(alpha=1.,a=h0D1_dvr,b=vtemp)
+
     for a in range(na):
         for i1 in range(n1):
             for i2 in range(n2):
@@ -54,12 +60,16 @@ def h02_v(v): # act with  h02 term
     N =len(v)
     u=v.copy()  
     vtemp=np.zeros((n2,n1*na),float)
+    utemp=np.zeros((n2,n1*na),float)
     for a in range(na):
         for i2 in range(n2):
             for i1 in range(n1):
                 vtemp[i2,a*n1+i1]=v[((a*n1+i1)*n2+i2)]
     # use blas through dot?
-    utemp=np.dot(h0D2_dvr,vtemp)
+    #utemp=np.dot(h0D2_dvr,vtemp)
+    utemp=np.matmul(h0D2_dvr,vtemp)
+    #utemp=dgemm(alpha=1.,a=h0D2_dvr,b=vtemp)
+
     for a in range(na):
         for i1 in range(n1):
             for i2 in range(n2):
