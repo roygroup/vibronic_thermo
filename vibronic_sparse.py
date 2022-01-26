@@ -171,7 +171,7 @@ def main(model, plotting=False):
 
     H_total=hEa+h01+h02+hq1+hq2
 
-    kmax=100
+    kmax=1000
     niter=100
     #evals, evecs = eigsh(A_total, k=kmax,which = 'SA', maxiter=niter)
     evals, evecs = eigsh(H_total, k=kmax,which = 'SA')
@@ -184,7 +184,7 @@ def main(model, plotting=False):
 
     # choose temperatures between 0.1 and 10 time the characteristic Theta=delta_E/eV_per_K
     Tmin=1.
-    Tmax=500.
+    Tmax=100.
     nT=1000 # number of temperature values
     deltaT=(Tmax-Tmin)/float(nT)
     T=np.zeros(nT,float)
@@ -323,7 +323,7 @@ def main(model, plotting=False):
 if (__name__ == "__main__"):
 
     # choose the model
-    model = ['Displaced', 'Jahn_Teller'][0]
+    model = ['Displaced', 'Jahn_Teller'][1]
     system_index = 5 # 0..5 for Displaced and Jahn-Teller
 
     # run
