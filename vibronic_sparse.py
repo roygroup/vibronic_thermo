@@ -6,6 +6,7 @@ THE JOURNAL OF CHEMICAL PHYSICS 148, 194110 (2018)
 
 # system imports
 import itertools as it
+import functools
 
 # third party imports
 import numpy as np
@@ -58,194 +59,163 @@ jahn_teller = {
     'w2': .03,
 }
 
+# ----------------------- LinearOperator functions ----------------------------
 
-def main(model, plotting=False):
 
-    def Ea_v(v):
-        """ act with diagonal Ea term """
-        N = len(v)
-        u = np.multiply(Elist_vec, v)
-        return u
+def Ea_v(v, Elist_vec):
+    """ act with diagonal Ea term """
+    u = np.multiply(Elist_vec, v)
+    return u
 
-    def h01_v(v):
-        """ act with  h01 term """
-        N = len(v)
-        u = v.copy()
-        vtemp = np.zeros((n1, n2*na), float)
-        utemp = np.zeros((n1, n2*na), float)
 
-        for a in range(na):
-            for i2 in range(n2):
-                for i1 in range(n1):
-                    vtemp[i1, a*n2+i2] = v[((a*n1+i1)*n2+i2)]
+def h01_v(v, h01_dvr, basis):
+    """ act with  h01 term """
 
-        utemp = np.matmul(h01_dvr, vtemp)
+    # unpack dictionary to local scope for easy readability
+    na, n1, n2 = basis['a'], basis['n1'], basis['n2']
 
-        for a in range(na):
-            for i1 in range(n1):
-                for i2 in range(n2):
-                    u[((a*n1+i1)*n2+i2)] = utemp[i1, a*n2+i2]
-        return u
+    u = v.copy()  # copy to avoid changing v?
 
-    def h02_v(v):
-        """ act with  h02 term
-        optimize with blas
-        """
-        N = len(v)
-        u = v.copy()
-        vtemp = np.zeros((n2, n1*na), float)
-        utemp = np.zeros((n2, n1*na), float)
-        for a in range(na):
-            for i2 in range(n2):
-                for i1 in range(n1):
-                    vtemp[i2, a*n1+i1] = v[((a*n1+i1)*n2+i2)]
+    vtemp = np.zeros((n1, n2*na), float)
+    utemp = np.zeros((n1, n2*na), float)
+
+    # flatten v into a matrix
+    for a, i2, i1 in it.product(range(na), range(n2), range(n1)):
+        v_index = (a*n1+i1)*n2+i2
+        vtemp[i1, a*n2+i2] = v[v_index]
+
+    utemp = np.matmul(h01_dvr, vtemp)
+
+    # unflatten utemp
+    for a, i1, i2 in it.product(range(na), range(n1), range(n2)):
+        u_index = (a*n1+i1)*n2+i2
+        u[u_index] = utemp[i1, a*n2+i2]
+
+    return u
+
+
+def h02_v(v, h02_dvr, basis):
+    """ act with  h02 term
+    optimize with blas
+    """
+
+    # unpack dictionary to local scope for easy readability
+    na, n1, n2 = basis['a'], basis['n1'], basis['n2']
+
+    u = v.copy()  # copy to avoid changing v?
+
+    vtemp = np.zeros((n2, n1*na), float)
+    utemp = np.zeros((n2, n1*na), float)
+
+    # flatten v into a matrix
+    for a, i2, i1 in it.product(range(na), range(n2), range(n1)):
+        v_index = (a*n1+i1)*n2+i2
+        vtemp[i2, a*n1+i1] = v[v_index]
 
     # use blas through dot?
     # utemp=np.dot(h0D2_dvr,vtemp)
-        utemp = np.matmul(h02_dvr, vtemp)
-        for a in range(na):
-            for i1 in range(n1):
-                for i2 in range(n2):
-                    u[((a*n1+i1)*n2+i2)] = utemp[i2, a*n1+i1]
-        return u
+    utemp = np.matmul(h02_dvr, vtemp)
 
-    def q1_v(v):
-        """ act with displaced q1 """
-        N = len(v)
-        u = np.multiply(lamb_grid1_vec, v)
-        return u
-
-    def q2_v(v):
-        """ act with displaced q1 """
-        N = len(v)
-        u = v.copy()
-        for i1 in range(n1):
-            for i2 in range(n2):
-                a = 0
-                u[(((a+1)*n1+i1)*n2+i2)] = param_times_grid2[i2]*v[((a*n1+i1)*n2+i2)]
-                a = 1
-                u[(((a-1)*n1+i1)*n2+i2)] = param_times_grid2[i2]*v[((a*n1+i1)*n2+i2)]
-        return u
-
-    # basis sizes (store in dictionary for easy passing to functions)
-    n1, n2, na = 10, 10, 2
-    basis = {'n1': n1, 'n2': n2, 'a': na}
-
-    # total size of product basis
-    N = n1*n2*na
-    basis['N'] = N
-
-    # modes only basis size
-    n12 = n1*n2
-
-    # allocate memory for the Hamiltonian terms
-    h01 = np.zeros((n1, n1), float)  # diagonal matrix
-    h02 = np.zeros((n2, n2), float)  # diagonal matrix
-
-    if model == 'Displaced':
-        w1 = displaced['w1']
-        w2 = displaced['w2']
-    if model == 'Jahn_Teller':
-        w1 = jahn_teller['w1']
-        w2 = jahn_teller['w2']
-
-    # initialize these matrices
-    for i1 in range(n1):
-        h01[i1, i1] = w1*(float(i1)+.5)
-    for i2 in range(n2):
-        h02[i2, i2] = w2*(float(i2)+.5)
-
-    # define dimentionless q matrices for each mode (basis sizes could be different)
-    qmat1 = q_matrix(n1)
-    qmat2 = q_matrix(n2)
-
-    # define the dvr grid
-    grid1, T1 = np.linalg.eigh(qmat1)
-    grid2, T2 = np.linalg.eigh(qmat2)
-    param_times_grid2 = grid2.copy()
-
-    if model == 'Displaced':
-        param_times_grid2 = displaced['gamma'][system_index]*grid2
-    if model == 'Jahn_Teller':
-        param_times_grid2 = jahn_teller['lambda'][system_index]*grid2
-
-    # convert h01 and h02 to the DVR
-    h01_dvr = np.dot(np.transpose(T1), np.dot(h01, T1))
-    h02_dvr = np.dot(np.transpose(T2), np.dot(h02, T2))
-
-    # prepare vectors for fast multiplies
-    # allocate memory for Ea_list
-    Elist_vec = np.zeros(N, float)
-    lamb_grid1_vec = np.zeros(N, float)
-
-    # fill Elist_vec and lamb_grid1_vec with appropriate values
+    # unflatten utemp
     for a, i1, i2 in it.product(range(na), range(n1), range(n2)):
-        index = ((a*n1+i1)*n2+i2)
+        u_index = (a*n1+i1)*n2+i2
+        u[v_index] = utemp[i2, a*n1+i1]
 
-        if model == 'Jahn_Teller':
+    return u
 
-            Elist_vec[index] = jahn_teller['energy'][system_index]
 
-            if (a == 0):
-                lamb_grid1_vec[index] = jahn_teller['lambda'][system_index]*grid1[i1]
+def q1_v(v, lamb_grid1_vec):
+    """ act with displaced q1 """
+    return np.multiply(lamb_grid1_vec, v)
 
-            if (a == 1):
-                lamb_grid1_vec[index] = (-jahn_teller['lambda'][system_index])*grid1[i1]
 
-        if model == 'Displaced':
+def q2_v(v, param_times_grid2, basis):
+    """ act with displaced q1 """
 
-            Elist_vec[index] = displaced['energy'][a]
+    # unpack dictionary to local scope for easy readability
+    n1, n2 = basis['n1'], basis['n2']
 
-            if (a == 0):
-                lamb_grid1_vec[index] = displaced['lambda']*grid1[i1]
+    u = v.copy()  # copy to avoid changing v?
 
-            if (a == 1):
-                lamb_grid1_vec[index] = (-displaced['lambda'])*grid1[i1]
+    for i1, i2 in it.product(range(n1), range(n2)):
+        a = 0
+        u_index = ((a+1)*n1+i1)*n2+i2
+        v_index = (a*n1+i1)*n2+i2
+        u[u_index] = param_times_grid2[i2] * v[v_index]
 
-    # define LinearOperators to preform sparse operations with
-    hEa = LinearOperator((N, N), matvec=Ea_v)
-    h01 = LinearOperator((N, N), matvec=h01_v)
-    h02 = LinearOperator((N, N), matvec=h02_v)
-    hq1 = LinearOperator((N, N), matvec=q1_v)
-    hq2 = LinearOperator((N, N), matvec=q2_v)
+        a = 1
+        u_index = ((a-1)*n1+i1)*n2+i2
+        v_index = (a*n1+i1)*n2+i2
+        u[u_index] = param_times_grid2[i2] * v[v_index]
 
-    H_total = hEa+h01+h02+hq1+hq2
+    return u
 
-    kmax = 100
-    niter = 100
+# -------------------------- plotting functions -------------------------------
 
-    assert kmax < N, f'The number of requested eigenvalues/vectors {kmax = } must be strictly < the basis size {N = } '
 
-    # diagonalize
-    # evals, evecs = eigsh(A_total, k=kmax,which = 'SA', maxiter=niter)
-    evals, evecs = eigsh(H_total, k=kmax, which='SA')
+def label_plots(figures, axes, model, system_index):
+    """ x """
 
+    # remove underscore for matplotlib title
+    model_name = model.replace('_', '')
+
+    axes['EV'].set(title=f"E(n) vs n \n{model_name}", xlabel='basis size (n)', ylabel='E(n)/kB (K)')
+    axes['E'].set(title=f"<E> vs T \n{model_name}", xlabel='Temperature (K)', ylabel='<E>/kB (K)')
+    axes['CV'].set(title=f"Cv vs T \n{model_name}", xlabel='Temperature (K)', ylabel='Cv/kB')
+    axes['A'].set(title=f"A vs T \n{model_name}", xlabel='Temperature (K)', ylabel='A/kB (K)')
+    axes['S'].set(title=f"S vs T \n{model_name}", xlabel='Temperature (K)', ylabel='S/kB')
+
+    # save to file (leave underscore for file name of plot)
+    figures['EV'].savefig(f"E_vs_n_{model}_{system_index}.png")
+    figures['E'].savefig(f"E_vs_T_{model}_{system_index}.png")
+    figures['CV'].savefig(f"Cv_vs_T_{model}_{system_index}.png")
+    figures['A'].savefig(f"A_vs_T_{model}_{system_index}.png")
+    figures['S'].savefig(f"S_vs_T_{model}_{system_index}.png")
+
+
+def plot_thermo(ax_d, thermo, labels, kmax):
+    """ plot thermodynamic values """
+
+    # plot and label
+    x = [i for i in range(kmax)]
+    ax_d['EV'].plot(x, thermo['Ei'], label=labels)
+    ax_d['EV'].legend(loc="upper left")
+
+    ax_d['E'].plot(thermo['T'], thermo['<E>'], label=labels)
+    ax_d['E'].legend(loc="upper left")
+
+    ax_d['CV'].plot(thermo['T'], thermo['Cv'], label=labels)
+    ax_d['CV'].legend(loc="upper right")
+
+    ax_d['A'].plot(thermo['T'], thermo['A'], label=labels)
+    ax_d['A'].legend(loc="lower left")
+
+    ax_d['S'].plot(thermo['T'], thermo['S'], label=labels)
+    ax_d['S'].legend(loc="upper right")
+
+# ------------------------------ Statistics -----------------------------------
+
+
+def calculate_thermo_props(eig_vals, basis, nof_temps=1000):
+    """ x """
+
+    # choose temperatures between 0.1 and 10 times the characteristic Theta=delta_E/eV_per_K
     if model == 'Displaced':
-        delta_E = evals[1] - evals[0]
+        delta_E = eig_vals[1] - eig_vals[0]
+
     if model == 'Jahn_Teller':
-        delta_E = evals[2] - evals[0]  # use next gap because Jahn_Teller is degenerate
+        delta_E = eig_vals[2] - eig_vals[0]  # use next gap because Jahn_Teller is degenerate
 
     # choose temperatures between 0.1 and 10 time the characteristic Theta=delta_E/eV_per_K
     Tmin, Tmax = 1.0, 100.0
 
-    nT = 1000  # number of temperature values
-
-    deltaT = (Tmax-Tmin)/float(nT)
-
-    T = np.zeros(nT, float)
-    Probs = np.zeros((nT, kmax), float)
-    Z = np.zeros(nT, float)
-    E = np.zeros(nT, float)
-    E2 = np.zeros(nT, float)
-    Cv = np.zeros(nT, float)
-    A = np.zeros(nT, float)
-    S = np.zeros(nT, float)
+    deltaT = (Tmax - Tmin) / float(nof_temps)
 
     # temperature values
     T = np.arange(start=Tmin, stop=Tmax, step=deltaT)
 
     # eigenvalues with E0 = 0 in units of eV per Kelvin
-    Ei = (evals - evals[0]) / eV_per_K
+    Ei = (eig_vals - eig_vals[0]) / eV_per_K
 
     # reshape for easy broadcasting
     Ei_b = Ei.reshape(1, -1)  # (1, N)
@@ -271,58 +241,43 @@ def main(model, plotting=False):
     """
     Probs = np.exp(-Ei_b/T_b) / Z.reshape(-1, 1)
 
-    if model == 'Displaced':
-        labels = 'D, gamma='+str(displaced['gamma'][system_index])
+    thermo_dictionary = {
+        'nof temperatures': nof_temps,
+        'T': T, 'Ei': Ei,
+        'Z': Z, '<E>': E, '<E^2>': E2,
+        'Cv': Cv, 'A': A, 'S': S,
+        'P_i': Probs
+    }
 
-    if model == 'Jahn_Teller':
-        labels = 'JT, E='+str(jahn_teller['energy'][system_index])+' lambda='+str(jahn_teller['lambda'][system_index])
+    return thermo_dictionary
 
-    print(labels, 'Theta=', delta_E/eV_per_K, ' K')
 
-    fig_EV, ax_EV = plt.subplots()
-    fig_E, ax_E = plt.subplots()
-    fig_Cv, ax_Cv = plt.subplots()
-    fig_S, ax_S = plt.subplots()
-    fig_A, ax_A = plt.subplots()
+def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
+    """ calculate distributions for each temperature
+    """
 
-    ax_EV.plot([i for i in range(kmax)], (evals-evals[0])/eV_per_K, label=labels)
-    ax_E.plot(T, E, label=labels)
-    ax_Cv.plot(T, Cv, label=labels)
-    ax_A.plot(T, A, label=labels)
-    ax_S.plot(T, S, label=labels)
+    # unpack dictionary to local scope for easy readability
+    na, n1, n2 = basis['a'], basis['n1'], basis['n2']
 
-    ax_EV.set(title='E(n) vs n '+str(model), xlabel='n', ylabel='E(n)/kB (K)')
-    ax_E.set(title='<E> vs T '+str(model), xlabel='T (K)', ylabel='<E>/kB (K)')
-    ax_Cv.set(title='Cv vs T '+str(model), xlabel='T (K)', ylabel='Cv/kB ')
-    ax_A.set(title='A vs T '+str(model), xlabel='T (K)', ylabel='A/kB (K)')
-    ax_S.set(title='S vs T '+str(model), xlabel='T (K)', ylabel='S/kB')
+    # extract the grids
+    grid1, grid2 = grids
 
-    fig_EV.savefig('Evsn_'+str(model)+str(system_index)+'.png')
-    fig_E.savefig('EvsT_'+str(model)+str(system_index)+'.png')
-    fig_Cv.savefig('CvvsT_'+str(model)+str(system_index)+'.png')
-    fig_A.savefig('AvsT_'+str(model)+str(system_index)+'.png')
-    fig_S.savefig('SvsT_'+str(model)+str(system_index)+'.png')
+    # extract the vectors
+    T1, T2 = T_list
 
+    Tlist = [0.1, 1., 2., 5., 10.]
+
+    # initialize the distribution arrays
     rho1 = np.zeros((n1), float)
     rho2 = np.zeros((n2), float)
     rho12 = np.zeros((n1, n2), float)
     w12 = np.zeros((n1, n2), float)
     rhoa = np.zeros((na, na), float)
 
-    # calculate distributions for each temperature
-
-    Tlist = [0.1, 1., 2., 5., 10.]
-
     for tindex in Tlist:
-        # output files
-        rho1_out = open('h1_T'+str(tindex)+'.dat', 'w')
-        rho2_out = open('h2_T'+str(tindex)+'.dat', 'w')
-        rho12_out = open('h12_T'+str(tindex)+'.dat', 'w')
-        w12_out = open('w12_T'+str(tindex)+'.dat', 'w')
-        rhoa_out = open('a_T'+str(tindex)+'.dat', 'w')
 
-        t = tindex*delta_E/eV_per_K
-        Z = 0.
+        t = tindex * (delta_E / eV_per_K)
+        Z = 0.0
 
         for i in range(kmax):
             Ei = (evals[i]-evals[0])/eV_per_K
@@ -345,16 +300,16 @@ def main(model, plotting=False):
                 flattened_index = (a*n1+i1)*n2+i2
                 rho12[i1, i2] += (evecs[flattened_index, i]**2)*np.exp(-Ei/t)
 
+        # normalize the distributions
         rho1 = (1./Z)*rho1
         rho2 = (1./Z)*rho2
         rho12 = (1./Z)*rho12
         rhoa = (1./Z)*rhoa
-
         w12 -= t*eV_per_K*np.log(rho12)
 
-        # grid1, T1
-        # convert to grid
         h1 = np.zeros(n1, float)
+        rho1_filedata = ''
+
         for i1 in range(n1):
             h1[i1] = rho1[i1]
 
@@ -362,11 +317,16 @@ def main(model, plotting=False):
             grid1_contribution = np.exp(-grid1[i1]**2) / (np.sqrt(np.pi)*T1[0, i1]**2)
             h1[i1] *= grid1_contribution
 
-            # save to file
-            rho1_string = f"{grid1[i1]} {h1[i1]}\n"
-            rho1_out.write(rho1_string)
+            # append line to string data
+            rho1_filedata += f"{grid1[i1]} {h1[i1]}\n"
+
+        # write to file
+        with open(f"h1_T{tindex}.dat", 'w') as fp:
+            fp.write(rho1_filedata)
 
         h2 = np.zeros(n2, float)
+        rho2_filedata = ''
+
         for i2 in range(n2):
             h2[i2] = rho2[i2]
 
@@ -374,9 +334,15 @@ def main(model, plotting=False):
             grid2_contribution = np.exp(-grid2[i2]**2) / (np.sqrt(np.pi)*T2[0, i2]**2)
             h2[i2] *= grid2_contribution
 
-            # save to file
-            rho2_string = f"{grid2[i2]} {h2[i2]}\n"
-            rho2_out.write(rho2_string)
+            # append line to string data
+            rho2_filedata += f"{grid2[i2]} {h2[i2]}\n"
+
+        # write to file
+        with open(f"h2_T{tindex}.dat", 'w') as fp:
+            fp.write(rho2_filedata)
+
+        rho12_filedata = ''
+        w12_filedata = ''
 
         for i1, i2 in it.product(range(n1), range(n2)):
 
@@ -385,24 +351,187 @@ def main(model, plotting=False):
             grid1_contribution = np.exp(-grid1[i1]**2) / (np.sqrt(np.pi)*T1[0, i1]**2)
             rho12[i1, i2] *= grid2_contribution * grid1_contribution
 
-            # save to file
-            rho12_string = f"{grid1[i1]} {grid2[i2]} {rho12[i1, i2]}\n"
-            rho12_out.write(rho12_string)
+            # append line to string data
+            rho12_filedata += f"{grid1[i1]} {grid2[i2]} {rho12[i1, i2]}\n"
 
-            w12_string = f"{grid1[i1]} {grid2[i2]} {w12[i1, i2]}\n"
-            w12_out.write(w12_string)
+            # append line to string data
+            w12_filedata += f"{grid1[i1]} {grid2[i2]} {w12[i1, i2]}\n"
+
+        with open(f"h12_T{tindex}.dat", 'w') as fp:
+            fp.write(rho12_filedata)
+
+        with open(f"w12_T{tindex}.dat", 'w') as fp:
+            fp.write(w12_filedata)
+
+        rhoa_filedata = ''
 
         for a, ap in it.product(range(na), range(na)):
 
             # save to file
-            rhoa_string = f"{a} {ap} {rhoa[a, ap]}\n"
-            rhoa_out.write(rhoa_string)
+            rhoa_filedata += f"{a} {ap} {rhoa[a, ap]}\n"
 
-        rho1_out.close()
-        rho2_out.close()
-        rho12_out.close()
-        w12_out.close()
-        rhoa_out.close()
+        with open(f"a_T{tindex}.dat", 'w') as fp:
+            fp.write(rhoa_filedata)
+
+# ----------------------------- DVR + Solve H ---------------------------------
+
+
+def create_dvr_grid(basis):
+    """ x """
+
+    # unpack dictionary to local scope for easy readability
+    n1, n2 = basis['n1'], basis['n2']
+
+    # allocate memory for the Hamiltonian terms
+    h01 = np.zeros((n1, n1), float)  # diagonal matrix
+    h02 = np.zeros((n2, n2), float)  # diagonal matrix
+
+    if model == 'Displaced':
+        w1 = displaced['w1']
+        w2 = displaced['w2']
+
+    if model == 'Jahn_Teller':
+        w1 = jahn_teller['w1']
+        w2 = jahn_teller['w2']
+
+    # initialize these matrices
+    for i1 in range(n1):
+        h01[i1, i1] = w1*(float(i1)+.5)
+
+    for i2 in range(n2):
+        h02[i2, i2] = w2*(float(i2)+.5)
+
+    # define dimentionless q matrices for each mode (basis sizes could be different)
+    qmat1 = q_matrix(n1)
+    qmat2 = q_matrix(n2)
+
+    # define the dvr grid
+    grid1, T1 = np.linalg.eigh(qmat1)
+    grid2, T2 = np.linalg.eigh(qmat2)
+
+    # convert h01 and h02 to the DVR
+    h01_dvr = np.dot(np.transpose(T1), np.dot(h01, T1))
+    h02_dvr = np.dot(np.transpose(T2), np.dot(h02, T2))
+
+    # stick objects into lists for compact handling
+    h_terms = [h01_dvr, h02_dvr]
+    q_mats = [qmat1, qmat2]
+    grids = [grid1, grid2]
+    T_list = [T1, T2]
+
+    return h_terms, q_mats, grids, T_list
+
+
+def build_full_hamiltonian(N, h_terms, grids, system_index, model, basis):
+    """ x """
+
+    # unpack dictionary to local scope for easy readability
+    na, n1, n2 = basis['a'], basis['n1'], basis['n2']
+
+    # prepare vectors for fast multiplies
+    # allocate memory for Ea_list
+    Elist_vec = np.zeros(N, float)
+    lamb_grid1_vec = np.zeros(N, float)
+
+    # extract the grids
+    grid1, grid2 = grids
+
+    # fill Elist_vec and lamb_grid1_vec with appropriate values
+    for a, i1, i2 in it.product(range(na), range(n1), range(n2)):
+
+        index = ((a*n1+i1)*n2+i2)
+
+        q1_sign = [1.0, -1.0][a]
+
+        if model == 'Jahn_Teller':
+            Elist_vec[index] = jahn_teller['energy'][system_index]
+
+            param_times_grid2 = jahn_teller['lambda'][system_index]*grid2
+
+            coef = jahn_teller['lambda'][system_index]
+            lamb_grid1_vec[index] = q1_sign * coef * grid1[i1]
+
+        if model == 'Displaced':
+            Elist_vec[index] = displaced['energy'][a]
+
+            param_times_grid2 = displaced['gamma'][system_index]*grid2
+
+            coef = displaced['lambda']
+            lamb_grid1_vec[index] = q1_sign * coef * grid1[i1]
+
+    # satisfy the other arguments of the matvec functions
+    Ea_func = functools.partial(Ea_v, Elist_vec=Elist_vec)
+    h01_func = functools.partial(h01_v, h01_dvr=h_terms[0], basis=basis)
+    h02_func = functools.partial(h02_v, h02_dvr=h_terms[1], basis=basis)
+    q1_func = functools.partial(q1_v, lamb_grid1_vec=lamb_grid1_vec)
+    q2_func = functools.partial(q2_v, param_times_grid2=param_times_grid2, basis=basis)
+
+    # define LinearOperators to preform sparse operations with
+    hEa = LinearOperator((N, N), matvec=Ea_func)
+    h01 = LinearOperator((N, N), matvec=h01_func)
+    h02 = LinearOperator((N, N), matvec=h02_func)
+    hq1 = LinearOperator((N, N), matvec=q1_func)
+    hq2 = LinearOperator((N, N), matvec=q2_func)
+
+    H_total = hEa+h01+h02+hq1+hq2
+
+    return H_total
+
+
+def main(model, system_index, plotting=False):
+    """ x """
+
+    # basis sizes (store in dictionary for easy passing to functions)
+    n1, n2, na = 10, 10, 2
+    basis = {'n1': n1, 'n2': n2, 'a': na}
+
+    # total size of product basis
+    N = n1*n2*na
+    basis['N'] = N
+
+    # modes only basis size
+    # n12 = n1*n2
+
+    h_terms, q_mats, grids, T_list = create_dvr_grid(basis)
+
+    H_total = build_full_hamiltonian(N, h_terms, grids, system_index, model, basis)
+
+    kmax = 100
+    # niter = 100
+
+    assert kmax < N, f'The number of requested eigenvalues/vectors {kmax = } must be strictly < the basis size {N = } '
+
+    # diagonalize
+    # evals, evecs = eigsh(A_total, k=kmax,which = 'SA', maxiter=niter)
+    evals, evecs = eigsh(H_total, k=kmax, which='SA')
+
+    thermo_props = calculate_thermo_props(evals, basis)
+
+    delta_E = {
+        'Displaced': evals[1] - evals[0],
+        'Jahn_Teller': evals[2] - evals[0],  # use next gap because Jahn_Teller is degenerate
+    }.get(model, 1.0)
+
+    if plotting:
+        # figure and axis dictionaries
+        fig_d, ax_d = {}, {}
+
+        # instantiate the subplots
+        for name in ['EV', 'E', 'CV', 'S', 'A']:
+            fig_d[name], ax_d[name] = plt.subplots()
+
+        labels = {
+            'Displaced': f"D, gamma={displaced['gamma'][system_index]}",
+            'Jahn_Teller': f"JT, E={jahn_teller['energy'][system_index]} lambda={jahn_teller['lambda'][system_index]}",
+        }.get(model, '')
+
+        print(labels, f"Theta={delta_E/eV_per_K} K")
+
+        plot_thermo(ax_d, thermo_props, labels, kmax)
+        label_plots(fig_d, ax_d, model, system_index)
+    #
+
+    calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis)
 
 
 if (__name__ == "__main__"):
@@ -411,5 +540,7 @@ if (__name__ == "__main__"):
     model = ['Displaced', 'Jahn_Teller'][1]
     system_index = 5  # 0..5 for Displaced and Jahn-Teller
 
+    plot = True  # if plotting the results
+
     # run
-    main(model, system_index)
+    main(model, system_index, plot)
