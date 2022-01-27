@@ -7,12 +7,10 @@ import itertools as it
 # third party imports
 import numpy as np
 from numpy import newaxis as NEW
-import matplotlib as mpl
-mpl.use("pdf")
+import matplotlib as mpl; mpl.use("pdf")  # needed for WSL2
 import matplotlib.pyplot as plt
 
 # local imports
-
 
 def q_matrix(basis_size):
     """ Build continuous dimension matrix """
@@ -314,12 +312,33 @@ def main(model, plotting=False):
         label_plots(fig_d, ax_d, model)
 
 
+def profiling_code(model, plot):
+    """ simple profiling """
+
+    import cProfile
+    import pstats
+
+    filename = 'cProfile_output'
+    cProfile.runctx(
+        'main(model, plot)',
+        globals(),
+        locals(),
+        filename
+    )
+    p = pstats.Stats(filename)
+    p.strip_dirs().sort_stats("tottime").print_stats(6)
+    p.strip_dirs().sort_stats("cumulative").print_stats(20)
+    # p.strip_dirs().sort_stats("cumulative").print_stats('calculate', 15)
+
+
 if (__name__ == "__main__"):
 
     # choose the model
     model = ['Displaced', 'Jahn_Teller'][1]
 
     plot = True  # if plotting the results
+
+    # profiling_code(model, plot)
 
     # run
     main(model, plot)

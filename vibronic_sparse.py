@@ -265,48 +265,7 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
     # extract the vectors
     T1, T2 = T_list
 
-    Tlist = [0.1, 1., 2., 5., 10.]
-
-    # initialize the distribution arrays
-    rho1 = np.zeros((n1), float)
-    rho2 = np.zeros((n2), float)
-    rho12 = np.zeros((n1, n2), float)
-    w12 = np.zeros((n1, n2), float)
-    rhoa = np.zeros((na, na), float)
-
-    for tindex in Tlist:
-
-        t = tindex * (delta_E / eV_per_K)
-        Z = 0.0
-
-        for i in range(kmax):
-            Ei = (evals[i]-evals[0])/eV_per_K
-            Z += np.exp(-Ei/t)
-
-            for a, ap, i1, i2 in it.product(range(na), range(na), range(n1), range(n2)):
-                flattened_index = (a*n1+i1)*n2+i2
-                flattened_index_prime = (ap*n1+i1)*n2+i2
-                rhoa[a, ap] += evecs[flattened_index, i]*evecs[flattened_index_prime, i]*np.exp(-Ei/t)
-
-            for i1, i2, a in it.product(range(n1), range(n2), range(na)):
-                flattened_index = (a*n1+i1)*n2+i2
-                rho1[i1] += (evecs[flattened_index, i]**2)*np.exp(-Ei/t)
-
-            for i2, i1, a in it.product(range(n2), range(n1), range(na)):
-                flattened_index = (a*n1+i1)*n2+i2
-                rho2[i2] += (evecs[flattened_index, i]**2)*np.exp(-Ei/t)
-
-            for i1, i2, a in it.product(range(n1), range(n2), range(na)):
-                flattened_index = (a*n1+i1)*n2+i2
-                rho12[i1, i2] += (evecs[flattened_index, i]**2)*np.exp(-Ei/t)
-
-        # normalize the distributions
-        rho1 = (1./Z)*rho1
-        rho2 = (1./Z)*rho2
-        rho12 = (1./Z)*rho12
-        rhoa = (1./Z)*rhoa
-        w12 -= t*eV_per_K*np.log(rho12)
-
+    def write_h1_to_file(t_index, rho1):
         h1 = np.zeros(n1, float)
         rho1_filedata = ''
 
@@ -321,8 +280,10 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
             rho1_filedata += f"{grid1[i1]} {h1[i1]}\n"
 
         # write to file
-        with open(f"h1_T{tindex}.dat", 'w') as fp:
+        with open(f"h1_T{t_index}.dat", 'w') as fp:
             fp.write(rho1_filedata)
+
+    def write_h2_to_file(t_index, rho2):
 
         h2 = np.zeros(n2, float)
         rho2_filedata = ''
@@ -338,9 +299,10 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
             rho2_filedata += f"{grid2[i2]} {h2[i2]}\n"
 
         # write to file
-        with open(f"h2_T{tindex}.dat", 'w') as fp:
+        with open(f"h2_T{t_index}.dat", 'w') as fp:
             fp.write(rho2_filedata)
 
+    def write_h12_w12_to_file(t_index, rho12, w12):
         rho12_filedata = ''
         w12_filedata = ''
 
@@ -357,12 +319,13 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
             # append line to string data
             w12_filedata += f"{grid1[i1]} {grid2[i2]} {w12[i1, i2]}\n"
 
-        with open(f"h12_T{tindex}.dat", 'w') as fp:
+        with open(f"h12_T{t_index}.dat", 'w') as fp:
             fp.write(rho12_filedata)
 
-        with open(f"w12_T{tindex}.dat", 'w') as fp:
+        with open(f"w12_T{t_index}.dat", 'w') as fp:
             fp.write(w12_filedata)
 
+    def write_rhoa_to_file(t_index, rhoa):
         rhoa_filedata = ''
 
         for a, ap in it.product(range(na), range(na)):
@@ -370,8 +333,76 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
             # save to file
             rhoa_filedata += f"{a} {ap} {rhoa[a, ap]}\n"
 
-        with open(f"a_T{tindex}.dat", 'w') as fp:
+        with open(f"a_T{t_index}.dat", 'w') as fp:
             fp.write(rhoa_filedata)
+
+    # the temperatures we will evaluate our distributions at
+    temperature_list = [0.1, 1., 2., 5., 10.]
+
+    # initialize the distribution arrays
+    rho1 = np.zeros((n1), float)
+    rho2 = np.zeros((n2), float)
+    rho12 = np.zeros((n1, n2), float)
+    w12 = np.zeros((n1, n2), float)
+    rhoa = np.zeros((na, na), float)
+
+    # eigenvalues with E0 = 0 in units of eV per Kelvin
+    Ei = (evals - evals[0]) / eV_per_K
+    temp = np.array(temperature_list) * (delta_E / eV_per_K)
+
+    # reshape for easy broadcasting
+    Ei_b = Ei.reshape(1, -1)  # (1, N)
+    T_b = temp.reshape(-1, 1)  # (nof_temps, 1)
+
+    # axis 1 is `N` the basis dimension
+    Z = np.sum(np.exp(-Ei_b/T_b), axis=1)
+
+    for idx, T_val in enumerate(temperature_list):
+
+        t = T_val * (delta_E / eV_per_K)
+
+        exponent = np.exp(-Ei/t)
+
+        for a, ap, i1, i2 in it.product(range(na), range(na), range(n1), range(n2)):
+            flattened_index = (a*n1+i1)*n2+i2
+            flattened_index2 = (ap*n1+i1)*n2+i2
+
+            rhoa[a, ap] += np.sum(
+                evecs[flattened_index, :] * evecs[flattened_index2, :] * exponent
+            )
+
+        for i1, i2, a in it.product(range(n1), range(n2), range(na)):
+            flattened_index = (a*n1+i1)*n2+i2
+
+            rho1[i1] += np.sum(
+                (evecs[flattened_index, :]**2) * exponent
+            )
+
+            rho12[i1, i2] += np.sum(
+                (evecs[flattened_index, :]**2) * exponent
+            )
+
+        for i2, i1, a in it.product(range(n2), range(n1), range(na)):
+            flattened_index = (a*n1+i1)*n2+i2
+            rho2[i2] += np.sum(
+                (evecs[flattened_index, :]**2) * exponent
+            )
+
+        # normalize the distributions
+        rho1 /= Z[idx]
+        rho2 /= Z[idx]
+        rho12 /= Z[idx]
+        rhoa /= Z[idx]
+
+        w12 -= t*eV_per_K*np.log(rho12)
+
+        # write all the distributions to file
+        write_h1_to_file(T_val, rho1)
+        write_h2_to_file(T_val, rho2)
+        write_h12_w12_to_file(T_val, rho12, w12)
+        write_rhoa_to_file(T_val, rhoa)
+
+    return
 
 # ----------------------------- DVR + Solve H ---------------------------------
 
@@ -534,6 +565,26 @@ def main(model, system_index, plotting=False):
     calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis)
 
 
+def profiling_code(model, plot):
+    """ simple profiling """
+
+    import cProfile
+    import pstats
+
+    filename = 'cProfile_output'
+    cProfile.runctx(
+        'main(model, plot)',
+        globals(),
+        locals(),
+        filename
+    )
+    p = pstats.Stats(filename)
+    p.strip_dirs().sort_stats("tottime").print_stats(8)
+    p.strip_dirs().sort_stats("cumulative").print_stats(8)
+    p.strip_dirs().sort_stats("cumulative").print_callees('calculate_distributions')
+    # p.strip_dirs().sort_stats("cumulative").print_callers('calculate_distributions')
+
+
 if (__name__ == "__main__"):
 
     # choose the model
@@ -541,6 +592,8 @@ if (__name__ == "__main__"):
     system_index = 5  # 0..5 for Displaced and Jahn-Teller
 
     plot = True  # if plotting the results
+
+    # profiling_code(model, plot)
 
     # run
     main(model, system_index, plot)
