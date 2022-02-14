@@ -339,13 +339,6 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
     # the temperatures we will evaluate our distributions at
     temperature_list = [0.1, 1., 2., 5., 10.]
 
-    # initialize the distribution arrays
-    rho1 = np.zeros((n1), float)
-    rho2 = np.zeros((n2), float)
-    rho12 = np.zeros((n1, n2), float)
-    w12 = np.zeros((n1, n2), float)
-    rhoa = np.zeros((na, na), float)
-
     # eigenvalues with E0 = 0 in units of eV per Kelvin
     Ei = (evals - evals[0]) / eV_per_K
     temp = np.array(temperature_list) * (delta_E / eV_per_K)
@@ -358,6 +351,13 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
     Z = np.sum(np.exp(-Ei_b/T_b), axis=1)
 
     for idx, T_val in enumerate(temperature_list):
+
+        # initialize the distribution arrays
+        rho1 = np.zeros((n1), float)
+        rho2 = np.zeros((n2), float)
+        rho12 = np.zeros((n1, n2), float)
+        w12 = np.zeros((n1, n2), float)
+        rhoa = np.zeros((na, na), float)
 
         t = T_val * (delta_E / eV_per_K)
 
