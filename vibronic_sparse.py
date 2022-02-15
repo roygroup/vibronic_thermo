@@ -132,7 +132,7 @@ def h02_v(v, h02_dvr, basis):
     # unflatten utemp
     for a, i1, i2 in it.product(range(na), range(n1), range(n2)):
         u_index = (a*n1+i1)*n2+i2
-        u[v_index] = utemp[i2, a*n1+i1]
+        u[u_index] = utemp[i2, a*n1+i1]
 
     return u
 
