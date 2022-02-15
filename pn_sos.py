@@ -1,37 +1,64 @@
-# Thermodynamics of models from
-# THE JOURNAL OF CHEMICAL PHYSICS 148, 194110 (2018)
-
 # system imports
+import os
+from os.path import join, abspath, dirname
 import itertools as it
+import json
 
 # third party imports
 import numpy as np
-from numpy import newaxis as NEW
+# from numpy import newaxis as NEW
 import matplotlib as mpl; mpl.use("pdf")  # needed for WSL2
 import matplotlib.pyplot as plt
 
 # local imports
 
-def q_matrix(basis_size):
-    """ Build continuous dimension matrix """
-    matrix = np.zeros((basis_size, basis_size), float)
-
-    for i, ip in it.product(range(basis_size), repeat=2):
-        if ip == (i+1):
-            matrix[i, ip] = np.sqrt(float(i) + 1.0)
-
-        if ip == (i-1):
-            matrix[i, ip] = np.sqrt(float(i))
-
-        matrix[i, ip] /= np.sqrt(2.0)
-
-    return matrix
+# ----------------------------- I/O Functions ---------------------------------
+output_dir = abspath(join(dirname(__file__), 'output'))
+os.makedirs(output_dir, exist_ok=True)  # make sure the output directory exists
 
 
-def delta(i, j):
-    """ Kronecker delta function"""
-    return 1.0 if i == j else 0.0
+def make_figure_path(plot_name):
+    """ Factorize out construction of the default figure path.
+    Allows for easier modification.
+    """
+    thermo_dir = join(output_dir, 'thermo')
+    os.makedirs(thermo_dir, exist_ok=True)  # make sure the output directory exists
 
+    path = join(thermo_dir, plot_name)
+
+    return path
+
+
+def make_data_path(file_name):
+    """ Factorize out construction of the default input data path.
+    Allows for easier modification.
+    """
+    path = join(output_dir, 'data', file_name)
+
+    return path
+
+
+def save_to_json(dictionary, file_name):
+    """ Save thermo results to a json file.
+    Remembering that we have to convert the numpy arrays to lists.
+    """
+
+    new_dictionary = {}
+    for k, v in dictionary.items():
+        if isinstance(v, np.ndarray):
+            new_dictionary[k] = v.tolist()
+        else:
+            new_dictionary[k] = v
+
+    output_path = make_data_path(file_name)
+    with open(output_path, 'w') as fp:
+        json.dump(new_dictionary, fp)
+
+    return
+
+# --------------------------- Model Parameters --------------------------------
+# Thermodynamics of models from
+# THE JOURNAL OF CHEMICAL PHYSICS 148, 194110 (2018)
 
 # constants
 eV_per_K = 8.617333262e-5
@@ -59,7 +86,6 @@ displaced = {
     'w2': 0.04,
 }
 
-
 # finding three critical points
 # gmin=.11
 # gmax=.13
@@ -76,6 +102,7 @@ jahn_teller = {
     'w1': .03,
     'w2': .03,
 }
+# -------------------------- plotting functions -------------------------------
 
 
 def label_plots(figures, axes, model):
@@ -91,11 +118,11 @@ def label_plots(figures, axes, model):
     axes['S'].set(title=f"S vs T \n{model_name}", xlabel='Temperature (K)', ylabel='S/kB')
 
     # save to file (leave underscore for file name of plot)
-    figures['EV'].savefig(f"E_vs_n_{model}.png")
-    figures['E'].savefig(f"E_vs_T_{model}.png")
-    figures['CV'].savefig(f"Cv_vs_T_{model}.png")
-    figures['A'].savefig(f"A_vs_T_{model}.png")
-    figures['S'].savefig(f"S_vs_T_{model}.png")
+    figures['EV'].savefig(make_figure_path(f"E_vs_n_{model}.png"))
+    figures['E'].savefig(make_figure_path(f"E_vs_T_{model}.png"))
+    figures['CV'].savefig(make_figure_path(f"Cv_vs_T_{model}.png"))
+    figures['A'].savefig(make_figure_path(f"A_vs_T_{model}.png"))
+    figures['S'].savefig(make_figure_path(f"S_vs_T_{model}.png"))
 
 
 def plot_thermo(ax_d, thermo, labels, basis):
@@ -118,35 +145,7 @@ def plot_thermo(ax_d, thermo, labels, basis):
     ax_d['S'].plot(thermo['T'], thermo['S'], label=labels)
     ax_d['S'].legend(loc="upper right")
 
-
-def create_h0_matrix(model, basis):
-    """ x """
-
-    # unpack dictionary to local scope for easy readability
-    nq1, nq2 = basis['n1'], basis['n2']
-
-    # modes only basis size
-    n12 = nq1 * nq2
-
-    # allocate memory for the h0 Hamiltonian
-    if model == 'Displaced':
-        h0_matrix = np.zeros((n12), float)  # diagonal matrix
-
-        for i1, i2 in it.product(range(nq1), range(nq2)):
-            # harmonic oscillator omega * 1/2 + n
-            index = i1*nq2 + i2
-            h0_matrix[index] = displaced['w1']*(float(i1)+.5) + displaced['w2']*(float(i2)+.5)
-
-    elif model == 'Jahn_Teller':
-        h0_matrix = np.zeros((n12), float)  # diagonal matrix
-
-    elif model == 'Jahn_Teller':
-        for i1, i2 in it.product(range(nq1), range(nq2)):
-            # harmonic oscillator omega * 1/2 + n
-            index = i1*nq2 + i2
-            h0_matrix[index] = jahn_teller['w1']*(float(i1)+.5) + jahn_teller['w2']*(float(i2)+.5)
-
-    return h0_matrix
+# ------------------------------ Statistics -----------------------------------
 
 
 def calculate_thermo_props(eig_vals, basis, nof_temps=300):
@@ -204,6 +203,13 @@ def calculate_thermo_props(eig_vals, basis, nof_temps=300):
 
     return thermo_dictionary
 
+# ----------------------------- DVR + Solve H ---------------------------------
+
+
+def delta(i, j):
+    """ Kronecker delta function"""
+    return 1.0 if i == j else 0.0
+
 
 def build_full_hamiltonian(H, h0_matrix, q1mat, q2mat, s_index, model, basis):
     """ x """
@@ -246,6 +252,54 @@ def build_full_hamiltonian(H, h0_matrix, q1mat, q2mat, s_index, model, basis):
 
                 H[index] = energy_offset + q1_contribution + q2_contribution
     return
+
+
+def q_matrix(basis_size):
+    """ Build continuous dimension matrix """
+    matrix = np.zeros((basis_size, basis_size), float)
+
+    for i, ip in it.product(range(basis_size), repeat=2):
+        if ip == (i+1):
+            matrix[i, ip] = np.sqrt(float(i) + 1.0)
+
+        if ip == (i-1):
+            matrix[i, ip] = np.sqrt(float(i))
+
+        matrix[i, ip] /= np.sqrt(2.0)
+
+    return matrix
+
+
+def create_h0_matrix(model, basis):
+    """ x """
+
+    # unpack dictionary to local scope for easy readability
+    nq1, nq2 = basis['n1'], basis['n2']
+
+    # modes only basis size
+    n12 = nq1 * nq2
+
+    # allocate memory for the h0 Hamiltonian
+    if model == 'Displaced':
+        h0_matrix = np.zeros((n12), float)  # diagonal matrix
+
+        for i1, i2 in it.product(range(nq1), range(nq2)):
+            # harmonic oscillator omega * 1/2 + n
+            index = i1*nq2 + i2
+            h0_matrix[index] = displaced['w1']*(float(i1)+.5) + displaced['w2']*(float(i2)+.5)
+
+    elif model == 'Jahn_Teller':
+        h0_matrix = np.zeros((n12), float)  # diagonal matrix
+
+    elif model == 'Jahn_Teller':
+        for i1, i2 in it.product(range(nq1), range(nq2)):
+            # harmonic oscillator omega * 1/2 + n
+            index = i1*nq2 + i2
+            h0_matrix[index] = jahn_teller['w1']*(float(i1)+.5) + jahn_teller['w2']*(float(i2)+.5)
+
+    return h0_matrix
+
+# --------------------------------- Main --------------------------------------
 
 
 def main(model, plotting=False):
@@ -305,6 +359,10 @@ def main(model, plotting=False):
 
         thermo_props = calculate_thermo_props(eig_vals, basis)
 
+        # save results to a file
+        file_name = f'sos_{model.lower()}_system_{s_index+1}.json'
+        save_to_json(thermo_props, file_name)
+
         if plotting:
             plot_thermo(ax_d, thermo_props, labels, basis)
 
@@ -329,6 +387,8 @@ def profiling_code(model, plot):
     p.strip_dirs().sort_stats("tottime").print_stats(6)
     p.strip_dirs().sort_stats("cumulative").print_stats(20)
     # p.strip_dirs().sort_stats("cumulative").print_stats('calculate', 15)
+
+# -----------------------------------------------------------------------------
 
 
 if (__name__ == "__main__"):

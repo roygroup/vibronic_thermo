@@ -5,39 +5,52 @@ THE JOURNAL OF CHEMICAL PHYSICS 148, 194110 (2018)
 """
 
 # system imports
+import sys
+import os
+from os.path import join, abspath, dirname
 import itertools as it
 import functools
 
 # third party imports
 import numpy as np
-from scipy import sparse
+# from scipy import sparse
 from scipy.sparse.linalg import eigsh
 from scipy.sparse.linalg import LinearOperator
 import matplotlib as mpl; mpl.use("pdf")  # needed for WSL2 (can also use Agg)
 import matplotlib.pyplot as plt
-import matplotlib.tri as tri
+# import matplotlib.tri as tri
 
 # local imports
 
+# ----------------------------- I/O Functions ---------------------------------
+output_dir = abspath(join(dirname(__file__), 'output'))
+os.makedirs(output_dir, exist_ok=True)  # make sure the output directory exists
 
-# functions
+
+def make_figure_path(plot_name):
+    """ Factorize out construction of the default figure path.
+    Allows for easier modification.
+    """
+    thermo_dir = join(output_dir, 'thermo')
+    os.makedirs(thermo_dir, exist_ok=True)  # make sure the output directory exists
+
+    path = join(thermo_dir, plot_name)
+
+    return path
 
 
-def q_matrix(basis_size):
-    """ Build continuous dimension matrix """
-    matrix = np.zeros((basis_size, basis_size), float)
+def make_output_data_path(file_name):
+    """ Factorize out construction of the default input data path.
+    Allows for easier modification.
+    """
+    data_path = join(output_dir, 'data')
+    os.makedirs(data_path, exist_ok=True)  # make sure the output directory exists
 
-    for i, ip in it.product(range(basis_size), repeat=2):
-        if ip == (i+1):
-            matrix[i, ip] = np.sqrt(float(i) + 1.0)
+    path = join(data_path, file_name)
 
-        if ip == (i-1):
-            matrix[i, ip] = np.sqrt(float(i))
+    return path
 
-        matrix[i, ip] /= np.sqrt(2.0)
-
-    return matrix
-
+# --------------------------- Model Parameters --------------------------------
 
 # constants
 eV_per_K = 8.617333262e-5
@@ -156,6 +169,9 @@ def q2_v(v, param_times_grid2, basis):
 def label_plots(figures, axes, model, system_index):
     """ x """
 
+    # since the range is 0 -> 5 but in reality we want to plot 1 -> 6
+    system_index += 1
+
     # remove underscore for matplotlib title
     model_name = model.replace('_', '')
 
@@ -166,11 +182,11 @@ def label_plots(figures, axes, model, system_index):
     axes['S'].set(title=f"S vs T \n{model_name}", xlabel='Temperature (K)', ylabel='S/kB')
 
     # save to file (leave underscore for file name of plot)
-    figures['EV'].savefig(f"E_vs_n_{model}_{system_index}.png")
-    figures['E'].savefig(f"E_vs_T_{model}_{system_index}.png")
-    figures['CV'].savefig(f"Cv_vs_T_{model}_{system_index}.png")
-    figures['A'].savefig(f"A_vs_T_{model}_{system_index}.png")
-    figures['S'].savefig(f"S_vs_T_{model}_{system_index}.png")
+    figures['EV'].savefig(make_figure_path(f"E_vs_n_{model}_{system_index}.png"))
+    figures['E'].savefig(make_figure_path(f"E_vs_T_{model}_{system_index}.png"))
+    figures['CV'].savefig(make_figure_path(f"Cv_vs_T_{model}_{system_index}.png"))
+    figures['A'].savefig(make_figure_path(f"A_vs_T_{model}_{system_index}.png"))
+    figures['S'].savefig(make_figure_path(f"S_vs_T_{model}_{system_index}.png"))
 
 
 def plot_thermo(ax_d, thermo, labels, kmax):
@@ -252,7 +268,7 @@ def calculate_thermo_props(eig_vals, basis, nof_temps=1000):
     return thermo_dictionary
 
 
-def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
+def calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  kmax, basis):
     """ calculate distributions for each temperature
     """
 
@@ -280,7 +296,11 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
             rho1_filedata += f"{grid1[i1]} {h1[i1]}\n"
 
         # write to file
-        with open(f"h1_T{t_index}.dat", 'w') as fp:
+        path = make_output_data_path(
+            f"{model.lower()}_{system_index+1}"
+            f"_h1_T{t_index}.dat"
+        )
+        with open(path, 'w') as fp:
             fp.write(rho1_filedata)
 
     def write_h2_to_file(t_index, rho2):
@@ -288,6 +308,7 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
         h2 = np.zeros(n2, float)
         rho2_filedata = ''
 
+        # import pdb; pdb.set_trace()
         for i2 in range(n2):
             h2[i2] = rho2[i2]
 
@@ -297,9 +318,14 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
 
             # append line to string data
             rho2_filedata += f"{grid2[i2]} {h2[i2]}\n"
+            # pdb.set_trace()
 
         # write to file
-        with open(f"h2_T{t_index}.dat", 'w') as fp:
+        path = make_output_data_path(
+            f"{model.lower()}_{system_index+1}"
+            f"_h2_T{t_index}.dat"
+        )
+        with open(path, 'w') as fp:
             fp.write(rho2_filedata)
 
     def write_h12_w12_to_file(t_index, rho12, w12):
@@ -319,21 +345,33 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
             # append line to string data
             w12_filedata += f"{grid1[i1]} {grid2[i2]} {w12[i1, i2]}\n"
 
-        with open(f"h12_T{t_index}.dat", 'w') as fp:
+        path = make_output_data_path(
+            f"{model.lower()}_{system_index+1}"
+            f"_h12_T{t_index}.dat"
+        )
+        with open(path, 'w') as fp:
             fp.write(rho12_filedata)
 
-        with open(f"w12_T{t_index}.dat", 'w') as fp:
+        path = make_output_data_path(
+            f"{model.lower()}_{system_index+1}"
+            f"_w12_T{t_index}.dat"
+        )
+        with open(path, 'w') as fp:
             fp.write(w12_filedata)
 
     def write_rhoa_to_file(t_index, rhoa):
+        """ x """
+
         rhoa_filedata = ''
-
         for a, ap in it.product(range(na), range(na)):
-
-            # save to file
             rhoa_filedata += f"{a} {ap} {rhoa[a, ap]}\n"
 
-        with open(f"a_T{t_index}.dat", 'w') as fp:
+        # save to file
+        path = make_output_data_path(
+            f"{model.lower()}_{system_index+1}"
+            f"_rhoa_T{t_index}.dat"
+        )
+        with open(path, 'w') as fp:
             fp.write(rhoa_filedata)
 
     # the temperatures we will evaluate our distributions at
@@ -389,10 +427,10 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
             )
 
         # normalize the distributions
-        rho1 /= Z[idx]
-        rho2 /= Z[idx]
-        rho12 /= Z[idx]
-        rhoa /= Z[idx]
+        rho1 /= Z[idx]  # rho(q1)
+        rho2 /= Z[idx]  # rho(q2)
+        rho12 /= Z[idx]  # rho(q1, q2)
+        rhoa /= Z[idx]  # rho(a)
 
         w12 -= t*eV_per_K*np.log(rho12)
 
@@ -405,6 +443,22 @@ def calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis):
     return
 
 # ----------------------------- DVR + Solve H ---------------------------------
+
+
+def q_matrix(basis_size):
+    """ Build continuous dimension matrix """
+    matrix = np.zeros((basis_size, basis_size), float)
+
+    for i, ip in it.product(range(basis_size), repeat=2):
+        if ip == (i+1):
+            matrix[i, ip] = np.sqrt(float(i) + 1.0)
+
+        if ip == (i-1):
+            matrix[i, ip] = np.sqrt(float(i))
+
+        matrix[i, ip] /= np.sqrt(2.0)
+
+    return matrix
 
 
 def create_dvr_grid(basis):
@@ -432,7 +486,7 @@ def create_dvr_grid(basis):
     for i2 in range(n2):
         h02[i2, i2] = w2*(float(i2)+.5)
 
-    # define dimentionless q matrices for each mode (basis sizes could be different)
+    # define dimensionless q matrices for each mode (basis sizes could be different)
     qmat1 = q_matrix(n1)
     qmat2 = q_matrix(n2)
 
@@ -508,12 +562,14 @@ def build_full_hamiltonian(N, h_terms, grids, system_index, model, basis):
 
     return H_total
 
+# --------------------------------- Main --------------------------------------
+
 
 def main(model, system_index, plotting=False):
     """ x """
 
     # basis sizes (store in dictionary for easy passing to functions)
-    n1, n2, na = 10, 10, 2
+    n1, n2, na = 20, 20, 2
     basis = {'n1': n1, 'n2': n2, 'a': na}
 
     # total size of product basis
@@ -530,10 +586,13 @@ def main(model, system_index, plotting=False):
     kmax = 100
     # niter = 100
 
-    assert kmax < N, f'The number of requested eigenvalues/vectors {kmax = } must be strictly < the basis size {N = } '
+    assert kmax < N, (
+        f'The number of requested eigenvalues/vectors {kmax = } '
+        f'must be strictly < the basis size {N = }'
+    )
 
     # diagonalize
-    # evals, evecs = eigsh(A_total, k=kmax,which = 'SA', maxiter=niter)
+    # evals, evecs = eigsh(A_total, k=kmax, which = 'SA', maxiter=niter)
     evals, evecs = eigsh(H_total, k=kmax, which='SA')
 
     thermo_props = calculate_thermo_props(evals, basis)
@@ -562,10 +621,10 @@ def main(model, system_index, plotting=False):
         label_plots(fig_d, ax_d, model, system_index)
     #
 
-    calculate_distributions(delta_E, evals, evecs, grids, T_list,  kmax, basis)
+    calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  kmax, basis)
 
 
-def profiling_code(model, plot):
+def profiling_code(model, system_index, plot):
     """ simple profiling """
 
     import cProfile
@@ -573,7 +632,7 @@ def profiling_code(model, plot):
 
     filename = 'cProfile_output'
     cProfile.runctx(
-        'main(model, plot)',
+        'main(model, system_index, plot)',
         globals(),
         locals(),
         filename
@@ -584,16 +643,45 @@ def profiling_code(model, plot):
     p.strip_dirs().sort_stats("cumulative").print_callees('calculate_distributions')
     # p.strip_dirs().sort_stats("cumulative").print_callers('calculate_distributions')
 
+# -----------------------------------------------------------------------------
+
+
+def get_simple_user_input(model, system_index):
+    """ x """
+
+    nof_Args = len(sys.argv)
+
+    if nof_Args > 1:
+        # process the first argument
+        # specify the lowercase character of the name of each model
+
+        letter = str(sys.argv[1])
+        if letter == 'd':
+            model = 'Displaced'
+        elif letter == 'j':
+            model = 'Jahn_Teller'
+        else:
+            raise Exception(f"Only 'd' or 'j' are accepted, not {letter}")
+
+        if nof_Args > 2:
+            system_index = int(sys.argv[2])
+
+    return model, system_index
+
 
 if (__name__ == "__main__"):
 
-    # choose the model
+    # default values
     model = ['Displaced', 'Jahn_Teller'][1]
     system_index = 5  # 0..5 for Displaced and Jahn-Teller
 
+    # user input override (if any input)
+    model, system_index = get_simple_user_input(model, system_index)
+
     plot = True  # if plotting the results
 
-    # profiling_code(model, plot)
+    # profiling_code(model, system_index, plot)
 
     # run
+    assert 0 <= system_index <= 5, f'Currently only takes 0,1,2,3,4, or 5, not {system_index}'
     main(model, system_index, plot)
