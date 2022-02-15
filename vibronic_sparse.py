@@ -531,18 +531,22 @@ def build_full_hamiltonian(N, h_terms, grids, system_index, model, basis):
         if model == 'Jahn_Teller':
             Elist_vec[index] = jahn_teller['energy'][system_index]
 
-            param_times_grid2 = jahn_teller['lambda'][system_index]*grid2
-
             coef = jahn_teller['lambda'][system_index]
             lamb_grid1_vec[index] = q1_sign * coef * grid1[i1]
 
         if model == 'Displaced':
             Elist_vec[index] = displaced['energy'][a]
 
-            param_times_grid2 = displaced['gamma'][system_index]*grid2
-
             coef = displaced['lambda']
             lamb_grid1_vec[index] = q1_sign * coef * grid1[i1]
+
+    # prepare the q2 parameters for the LinearOperator
+
+    if model == 'Jahn_Teller':
+        param_times_grid2 = jahn_teller['lambda'][system_index]*grid2
+
+    if model == 'Displaced':
+        param_times_grid2 = displaced['gamma'][system_index]*grid2
 
     # satisfy the other arguments of the matvec functions
     Ea_func = functools.partial(Ea_v, Elist_vec=Elist_vec)
@@ -601,6 +605,8 @@ def main(model, system_index, plotting=False):
         'Displaced': evals[1] - evals[0],
         'Jahn_Teller': evals[2] - evals[0],  # use next gap because Jahn_Teller is degenerate
     }.get(model, 1.0)
+
+    assert delta_E != 1.0, 'not a supported model'
 
     if plotting:
         # figure and axis dictionaries
