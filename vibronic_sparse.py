@@ -68,8 +68,8 @@ displaced = {
 jahn_teller = {
     'energy': [0.02999, 0.00333, 0.07666, 0.20999, 0.39667, 0.63135],
     'lambda': [0.00, 0.04, 0.08, 0.12, 0.16, 0.20],
-    'w1': .03,
-    'w2': .03,
+    'w1': 0.03,
+    'w2': 0.03,
 }
 
 # ----------------------- LinearOperator functions ----------------------------
@@ -142,8 +142,8 @@ def q1_v(v, lamb_grid1_vec):
     return np.multiply(lamb_grid1_vec, v)
 
 
-def q2_v(v, param_times_grid2, basis):
-    """ act with displaced q1 """
+def q2_v(v, scaled_grid2, basis):
+    """ act with displaced q2 """
 
     # unpack dictionary to local scope for easy readability
     n1, n2 = basis['n1'], basis['n2']
@@ -152,16 +152,137 @@ def q2_v(v, param_times_grid2, basis):
 
     for i1, i2 in it.product(range(n1), range(n2)):
         a = 0
-        u_index = ((a+1)*n1+i1)*n2+i2
-        v_index = (a*n1+i1)*n2+i2
-        u[u_index] = param_times_grid2[i2] * v[v_index]
+        u_index_a0 = ((a+1)*n1+i1)*n2+i2
+        v_index_a0 = (a*n1+i1)*n2+i2
+        u[u_index_a0] = scaled_grid2[i2] * v[v_index_a0]
 
         a = 1
-        u_index = ((a-1)*n1+i1)*n2+i2
-        v_index = (a*n1+i1)*n2+i2
-        u[u_index] = param_times_grid2[i2] * v[v_index]
+        u_index_a1 = ((a-1)*n1+i1)*n2+i2
+        v_index_a1 = (a*n1+i1)*n2+i2
+        u[u_index_a1] = scaled_grid2[i2] * v[v_index_a1]
 
     return u
+
+
+def fbr_h0_v(v, h0_fbr_terms, basis):
+    """ act with h01 term """
+
+    # unpack dictionary to local scope for easy readability
+    na, n1, n2 = basis['a'], basis['n1'], basis['n2']
+
+    u = v.copy()  # copy to avoid changing v
+
+    h01, h02 = h0_fbr_terms
+
+    for a, i1, i2 in it.product(range(na), range(n1), range(n2)):
+        index = (a*n1+i1)*n2+i2
+        u[index] = (h01[i1] + h02[i2])*v[index]
+
+    return u
+
+
+def fbr_q1_v(v, scaled_qmat1, basis):
+    """
+    <a|q1|a'> . v[a']
+
+    | +q1  0  | |v0|     |q1.v1|
+    | 0   -q1 | |v1|  =  |q1.v0|
+    """
+    # unpack dictionary to local scope for easy readability
+    n1, n2 = basis['n1'], basis['n2']
+
+    u = v.copy()  # copy to avoid changing v?
+
+    left_column = np.zeros((n1, n2), float)
+    right_column = np.zeros((n1, n2), float)
+
+    """ plus contribution
+    This represents the left COLUMN (a=0) of the matrix
+    """
+    for i2, i1 in it.product(range(n2), range(n1)):
+        v_index_a0 = (0*n1+i1)*n2+i2
+        left_column[i1, i2] = +v[v_index_a0]
+    left_column = np.matmul(scaled_qmat1, left_column)
+
+    """ minus contribution
+    This represents the right COLUMN (a=1) of the matrix
+    """
+    for i2, i1 in it.product(range(n2), range(n1)):
+        v_index_a1 = (1*n1+i1)*n2+i2
+        right_column[i1, i2] = -v[v_index_a1]
+    right_column = np.matmul(scaled_qmat1, right_column)
+
+    # glue it all together
+    for i1, i2 in it.product(range(n1), range(n2)):
+
+        """ a=0 ROW
+        we pick the a=0 COLUMN and a=0 ROW of the matrix
+        giving us the (0, 0) element which is +q1
+        """
+        u_index_a0 = (0*n1+i1)*n2+i2
+        u[u_index_a0] = left_column[i1, i2]
+
+        """ a=1 ROW
+        we pick the a=1 COLUMN and a=1 ROW of the matrix
+        giving us the (1, 1) element which is -q1
+        """
+        u_index_a1 = (1*n1+i1)*n2+i2
+        u[u_index_a1] = right_column[i1, i2]
+
+    return u
+
+
+def fbr_q2_v(v_vector, scaled_qmat2, basis):
+    """
+    <a|q2|a'> . v[a']
+
+    | 0  q2 | |v0|     |q2.v1|
+    | q2 0  | |v1|  =  |q2.v0|
+    """
+
+    # unpack dictionary to local scope for easy readability
+    n1, n2 = basis['n1'], basis['n2']
+
+    u_vector = v_vector.copy()  # return value
+
+    # temporary arrays
+    left_column = np.zeros((n2, n1), float)
+    right_column = np.zeros((n2, n1), float)
+
+    """ a=0 contribution
+    This represents the left COLUMN (a=0) of the matrix
+    """
+    for i2, i1 in it.product(range(n2), range(n1)):
+        v_index_a0 = (0*n1+i1)*n2+i2
+        left_column[i2, i1] = v_vector[v_index_a0]
+    left_column = np.matmul(scaled_qmat2, left_column)
+
+    """ a=1 contribution
+    This represents the right COLUMN (a=1) of the matrix
+    """
+    for i2, i1 in it.product(range(n2), range(n1)):
+        v_index_a1 = (1*n1+i1)*n2+i2
+        right_column[i2, i1] = v_vector[v_index_a1]
+    right_column = np.matmul(scaled_qmat2, right_column)
+
+    # glue it all together
+    for i1, i2 in it.product(range(n1), range(n2)):
+
+        """ a=0 ROW
+        we pick the a=1 COLUMN and a=0 ROW of the matrix
+        giving us the (0, 1) element which is q2
+        """
+        u_index_a0 = (0*n1+i1)*n2+i2
+        u_vector[u_index_a0] = right_column[i2, i1]
+
+        """ a=1 ROW
+        we pick the a=0 COLUMN and a=1 ROW of the matrix
+        giving us the (1, 0) element which is q2
+        """
+        u_index_a1 = (1*n1+i1)*n2+i2
+        u_vector[u_index_a1] = left_column[i2, i1]
+
+    return u_vector
 
 # -------------------------- plotting functions -------------------------------
 
@@ -208,6 +329,32 @@ def plot_thermo(ax_d, thermo, labels, kmax):
 
     ax_d['S'].plot(thermo['T'], thermo['S'], label=labels)
     ax_d['S'].legend(loc="upper right")
+
+# ------------------------------ Monte Carlo -----------------------------------
+
+
+def build_b_matrix(basis_size):
+    """ build the B matrix, a closed-path tri-diagonal matrix.
+    The covariance matrix in terms of the B matrix as follows:
+        cov(j) = 2 * S(j) - C(j) * B
+    """
+    shape = (basis_size, basis_size)
+    Bmat = np.zeros(shape, float)
+
+    for i, ip in it.product(range(basis_size), repeat=2):
+        # upper diagonal
+        if ip == (i+1):
+            Bmat[i, ip] = 1.0
+
+        # lower diagonal
+        if ip == (i-1):
+            Bmat[i, ip] = 1.0
+
+    # fill in the corners
+    Bmat[0, basis_size-1] = 1.0
+    Bmat[basis_size-1, 0] = 1.0
+
+    return Bmat
 
 # ------------------------------ Statistics -----------------------------------
 
@@ -461,7 +608,7 @@ def q_matrix(basis_size):
     return matrix
 
 
-def create_dvr_grid(basis):
+def create_harmonic_matrices(basis):
     """ x """
 
     # unpack dictionary to local scope for easy readability
@@ -486,6 +633,15 @@ def create_dvr_grid(basis):
     for i2 in range(n2):
         h02[i2, i2] = w2*(float(i2)+.5)
 
+    return [h01, h02]
+
+
+def create_dvr_grid(h01, h02, basis):
+    """ x """
+
+    # unpack dictionary to local scope for easy readability
+    n1, n2 = basis['n1'], basis['n2']
+
     # define dimensionless q matrices for each mode (basis sizes could be different)
     qmat1 = q_matrix(n1)
     qmat2 = q_matrix(n2)
@@ -498,16 +654,19 @@ def create_dvr_grid(basis):
     h01_dvr = np.dot(np.transpose(T1), np.dot(h01, T1))
     h02_dvr = np.dot(np.transpose(T2), np.dot(h02, T2))
 
+    # debugging
+    # print(f"{h02_dvr =}"); import pdb; pdb.set_trace()
+
     # stick objects into lists for compact handling
-    h_terms = [h01_dvr, h02_dvr]
+    dvr_terms = [h01_dvr, h02_dvr]
     q_mats = [qmat1, qmat2]
     grids = [grid1, grid2]
     T_list = [T1, T2]
 
-    return h_terms, q_mats, grids, T_list
+    return dvr_terms, q_mats, grids, T_list
 
 
-def build_full_hamiltonian(N, h_terms, grids, system_index, model, basis):
+def build_full_hamiltonian(N, dvr_h_terms, fbr_h_terms, grids, q_mats, system_index, model, basis, fbr_flag=False):
     """ x """
 
     # unpack dictionary to local scope for easy readability
@@ -519,7 +678,7 @@ def build_full_hamiltonian(N, h_terms, grids, system_index, model, basis):
     lamb_grid1_vec = np.zeros(N, float)
 
     # extract the grids
-    grid1, grid2 = grids
+    grid_q1, grid_q2 = grids
 
     # fill Elist_vec and lamb_grid1_vec with appropriate values
     for a, i1, i2 in it.product(range(na), range(n1), range(n2)):
@@ -532,28 +691,27 @@ def build_full_hamiltonian(N, h_terms, grids, system_index, model, basis):
             Elist_vec[index] = jahn_teller['energy'][system_index]
 
             coef = jahn_teller['lambda'][system_index]
-            lamb_grid1_vec[index] = q1_sign * coef * grid1[i1]
+            lamb_grid1_vec[index] = q1_sign * coef * grid_q1[i1]
 
         if model == 'Displaced':
             Elist_vec[index] = displaced['energy'][a]
 
             coef = displaced['lambda']
-            lamb_grid1_vec[index] = q1_sign * coef * grid1[i1]
+            lamb_grid1_vec[index] = q1_sign * coef * grid_q1[i1]
 
-    # prepare the q2 parameters for the LinearOperator
-
+    # prepare the q2 parameters for the LinearOperators
     if model == 'Jahn_Teller':
-        param_times_grid2 = jahn_teller['lambda'][system_index]*grid2
+        scaled_grid2 = jahn_teller['lambda'][system_index] * grid_q2
 
     if model == 'Displaced':
-        param_times_grid2 = displaced['gamma'][system_index]*grid2
+        scaled_grid2 = displaced['gamma'][system_index] * grid_q2
 
     # satisfy the other arguments of the matvec functions
     Ea_func = functools.partial(Ea_v, Elist_vec=Elist_vec)
-    h01_func = functools.partial(h01_v, h01_dvr=h_terms[0], basis=basis)
-    h02_func = functools.partial(h02_v, h02_dvr=h_terms[1], basis=basis)
+    h01_func = functools.partial(h01_v, h01_dvr=dvr_h_terms[0], basis=basis)
+    h02_func = functools.partial(h02_v, h02_dvr=dvr_h_terms[1], basis=basis)
     q1_func = functools.partial(q1_v, lamb_grid1_vec=lamb_grid1_vec)
-    q2_func = functools.partial(q2_v, param_times_grid2=param_times_grid2, basis=basis)
+    q2_func = functools.partial(q2_v, scaled_grid2=scaled_grid2, basis=basis)
 
     # define LinearOperators to preform sparse operations with
     hEa = LinearOperator((N, N), matvec=Ea_func)
@@ -562,18 +720,59 @@ def build_full_hamiltonian(N, h_terms, grids, system_index, model, basis):
     hq1 = LinearOperator((N, N), matvec=q1_func)
     hq2 = LinearOperator((N, N), matvec=q2_func)
 
-    H_total = hEa+h01+h02+hq1+hq2
+    # DVR Hamiltonian
+    dvr_H_total = hEa+h01+h02+hq1+hq2
 
-    return H_total
+    if fbr_flag:
+
+        # extract the q_mats
+        q_mat1, q_mat2 = q_mats
+
+        # prepare the q1 and q2 parameters for the LinearOperator
+        if model == 'Jahn_Teller':
+            # here both q1 and q2 are proportional to lambda
+            scaled_qmat1 = jahn_teller['lambda'][system_index] * q_mat1
+            scaled_qmat2 = jahn_teller['lambda'][system_index] * q_mat2
+
+        if model == 'Displaced':
+            # note q1 is proportional to lambda but q2 is proportional to gamma
+            scaled_qmat1 = displaced['lambda'] * q_mat1
+            scaled_qmat2 = displaced['gamma'][system_index] * q_mat2
+
+        # satisfy the other arguments of the matvec functions
+        h01_func = functools.partial(fbr_h0_v, h0_fbr_terms=fbr_h_terms, basis=basis)
+        q1_func = functools.partial(fbr_q1_v, scaled_qmat1=scaled_qmat1, basis=basis)
+        q2_func = functools.partial(fbr_q2_v, scaled_qmat2=scaled_qmat2, basis=basis)
+
+        h0_fbr = LinearOperator((N, N), matvec=h01_func)
+        hq1_fbr = LinearOperator((N, N), matvec=q1_func)
+        hq2_fbr = LinearOperator((N, N), matvec=q2_func)
+
+        # debugging
+        # evals, evecs = eigsh(hq2_fbr, k=100, which='SA')
+        # print(f"hq2_fbr {evals = }"); import pdb; pdb.set_trace()
+
+        # FBR Hamiltonian
+        fbr_H_total = hEa+h0_fbr+hq1_fbr+hq2_fbr
+
+        return dvr_H_total, fbr_H_total
+
+    return dvr_H_total
 
 # --------------------------------- Main --------------------------------------
 
 
-def main(model, system_index, plotting=False):
-    """ x """
+def main(model, system_index, plotting=False, fbr_flag=False):
+    """
+
+    if `plotting` is True then generate plots after all calculations.
+    if `fbr_flag` is True then compute H in the Full Basis Representation
+        in addition to the DVR.
+
+    """
 
     # basis sizes (store in dictionary for easy passing to functions)
-    n1, n2, na = 20, 20, 2
+    n1, n2, na = 10, 10, 2
     basis = {'n1': n1, 'n2': n2, 'a': na}
 
     # total size of product basis
@@ -583,21 +782,69 @@ def main(model, system_index, plotting=False):
     # modes only basis size
     # n12 = n1*n2
 
-    h_terms, q_mats, grids, T_list = create_dvr_grid(basis)
+    h01, h02 = create_harmonic_matrices(basis)
 
-    H_total = build_full_hamiltonian(N, h_terms, grids, system_index, model, basis)
+    # create Discrete Variable Representation grid
+    dvr_h_terms, q_mats, grids, T_list = create_dvr_grid(h01, h02, basis)
 
-    kmax = 100
-    # niter = 100
+    if fbr_flag:
+        # create Full Basis Representation h terms
+        fbr_h01 = np.diag(h01)
+        fbr_h02 = np.diag(h02)
+        fbr_h_terms = [fbr_h01, fbr_h02]
+    else:
+        fbr_h_terms = [None, None]
 
-    assert kmax < N, (
-        f'The number of requested eigenvalues/vectors {kmax = } '
+    args = (
+        N, dvr_h_terms, fbr_h_terms, grids, q_mats,
+        system_index, model, basis, fbr_flag
+    )
+    if not fbr_flag:
+        dvr_H_total = build_full_hamiltonian(*args)
+    else:
+        dvr_H_total, fbr_H_total = build_full_hamiltonian(*args)
+
+    k_max = 100
+
+    assert k_max < N, (
+        f'The number of requested eigenvalues/vectors {k_max = } '
         f'must be strictly < the basis size {N = }'
     )
 
     # diagonalize
-    # evals, evecs = eigsh(A_total, k=kmax, which = 'SA', maxiter=niter)
-    evals, evecs = eigsh(H_total, k=kmax, which='SA')
+    # niter = 100
+    # evals, evecs = eigsh(A_total, k=k_max, which = 'SA', maxiter=niter)
+    evals, evecs = eigsh(dvr_H_total, k=k_max, which='SA')
+
+    if fbr_flag:
+        # compare norms
+
+        dvr_norms = np.zeros(k_max)
+        for k in range(k_max):
+            dvr_norms[k] = np.sum(evecs[:, k]**2.0, axis=0)
+
+        fbr_evals, fbr_evecs = eigsh(fbr_H_total, k=k_max, which='SA')
+
+        fbr_norms = np.zeros(k_max)
+        for k in range(k_max):
+            fbr_norms[k] = np.sum(fbr_evecs[:, k]**2.0, axis=0)
+
+        # compare norms
+        # print(f"{dvr_norms = }")
+        # print(f"{fbr_norms = }")
+        assert np.allclose(dvr_norms, fbr_norms), 'dvr and fbr norms do not agree'
+        assert np.allclose(dvr_norms, 1.0), 'norm is not 1!'
+
+        # compare eigenvalues
+        delta_eigvals = evals - fbr_evals
+        print(f"{delta_eigvals = }")
+        print(f"{evals = }")
+        print(f"{fbr_evals = }")
+        import pdb; pdb.set_trace()
+
+        assert np.allclose(evals, fbr_evals), 'dvr and fbr eigenvalues are different'
+
+        # end of fbr debug check
 
     thermo_props = calculate_thermo_props(evals, basis)
 
@@ -623,11 +870,11 @@ def main(model, system_index, plotting=False):
 
         print(labels, f"Theta={delta_E/eV_per_K} K")
 
-        plot_thermo(ax_d, thermo_props, labels, kmax)
+        plot_thermo(ax_d, thermo_props, labels, k_max)
         label_plots(fig_d, ax_d, model, system_index)
     #
 
-    calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  kmax, basis)
+    calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  k_max, basis)
 
 
 def profiling_code(model, system_index, plot):
