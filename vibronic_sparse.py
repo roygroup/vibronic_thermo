@@ -356,6 +356,246 @@ def build_b_matrix(basis_size):
 
     return Bmat
 
+
+def monte_carlo_test(model, system_index, theta, basis):
+    """ x
+
+    """
+
+    assert model == 'Displaced', 'jahn teller not done yet'
+
+    na, n1, n2 = basis['a'], basis['n1'], basis['n2']
+    nof_modes = 2
+
+    da1_j1, da2_j1, da1_j2, da2_j2 = 0., 0., 0., 0.
+
+    if model == 'Displaced':
+        w1, w2, g1 = displaced['w1'], displaced['w2'], displaced['lambda']
+
+        da1_j1 = -1.0 * g1 / w1
+        da2_j1 = +1.0 * g1 / w1
+
+        Delta = np.array([
+            -0.5 * w1 * (da1_j1 ** 2),
+            -0.5 * w1 * (da2_j1 ** 2)
+        ])
+
+        Ea_tilde = displaced['energy'] + Delta
+        Ea_tilde -= Ea_tilde[0]  # set ground state to 0 eV
+
+    if model == 'Jahn_Teller':
+
+        assert False, "Not fully working yet, the MC only supports Displaced"
+
+        w1, g1 = jahn_teller['w1'], jahn_teller['lambda'][system_index]
+
+        da1_j1 = -1.0 * g1 / w1
+        da2_j1 = +1.0 * g1 / w1
+        # we don't do this because this part is only for the basic un-coupled systems
+        # da1_j2 = +1.0 * g1 / w1
+        # da2_j2 = +1.0 * g1 / w1
+
+        Delta = np.array([
+            -0.5 * w1 * (da1_j1 ** 2),
+            -0.5 * w1 * (da2_j1 ** 2)
+        ])
+
+        Ea_tilde = jahn_teller['energy'][system_index] + Delta
+        Ea_tilde -= Ea_tilde[0]  # set ground state to 0 eV
+
+    # fill dja array
+    shape = (nof_modes, na)
+    dja = np.zeros(shape, float)
+    dja[0, :] = [da1_j1, da2_j1]  # mode 1
+    dja[1, :] = [da1_j2, da2_j2]  # mode 2
+
+    P = 100  # beads
+    T = 10. * theta  # 10 times the characteristic temp
+    beta = 1. / (kB * T)
+    tau = beta / float(P)
+
+    Prob_a = np.zeros(na, float)
+
+    Prob_a[:] = np.exp(-beta*(Ea_tilde[:]))
+    Prob_a_norm = np.sum(Prob_a)
+    Prob_a /= Prob_a_norm
+    print(f"Displaced {Prob_a = }")
+
+    # initialize rng
+    from numpy.random import default_rng
+    rng = default_rng()
+
+    # ----------------------- Pre calculations ----------------------------
+
+    C_j1 = 1.0 / np.tanh(tau*w1)
+    C_j2 = 1.0 / np.tanh(tau*w2)
+    S_j1 = 1.0 / np.sinh(tau*w1)
+    S_j2 = 1.0 / np.sinh(tau*w2)
+    F_j1 = np.sqrt(S_j1 / 2. / np.pi)
+    F_j2 = np.sqrt(S_j2 / 2. / np.pi)
+
+    Bmat = build_b_matrix(P)
+
+    # initialize
+    inv_cov_j1, inv_cov_j2 = np.zeros((P, P), float), np.zeros((P, P), float)
+
+    # fill
+    for p in range(P):
+        inv_cov_j1[p, p] = 2. * C_j1
+        inv_cov_j2[p, p] = 2. * C_j2
+        for pp in range(P):
+            inv_cov_j1[p, pp] -= S_j1 * Bmat[p, pp]
+            inv_cov_j2[p, pp] -= S_j2 * Bmat[p, pp]
+
+    # invert to get covariance matrices
+    cov_j1, cov_j2 = np.linalg.inv(inv_cov_j1), np.linalg.inv(inv_cov_j2)
+
+    # always sample with zero means
+    mean_j1, mean_j2 = np.zeros(P, float), np.zeros(P, float)
+
+    # --------------------- prepare initial state -------------------------
+
+    def propose_new_state(surface_index):
+        """ x """
+
+        x_j1 = np.random.multivariate_normal(mean_j1, cov_j1)
+        x_j2 = np.random.multivariate_normal(mean_j2, cov_j2)
+
+        # unshift sampled x's
+        q_j1 = x_j1 + dja[0, surface_index]
+        q_j2 = x_j2 + dja[1, surface_index]
+
+        # prepare the exponential contributions
+        pi_j1 = np.exp(-0.5 * np.dot(x_j1, np.dot(inv_cov_j1, x_j1)))
+        pi_j2 = np.exp(-0.5 * np.dot(x_j2, np.dot(inv_cov_j2, x_j2)))
+
+        # prepare the prefactors
+        prefactor = (F_j1 * F_j2) ** P
+        prefactor *= np.exp(-beta * Ea_tilde[surface_index])
+
+        # and finally compute the whole distribution
+        rhoA = prefactor * pi_j1 * pi_j2
+
+        return q_j1, q_j2, rhoA
+
+    old_a_index = rng.choice(na, 1, p=Prob_a)[0]
+    old_q_j1, old_q_j2, old_rhoA = propose_new_state(old_a_index)
+
+    def build_o_matrix(q_j1, q_j2):
+        """ x """
+
+        Omat = np.zeros((P, na, na), float)
+
+        # broadcast over the # of beads
+        for a in range(na):
+
+            # array is size P
+            x_j1 = q_j1 - dja[0, a]
+            x_j2 = q_j2 - dja[1, a]
+
+            # shift the elements so that the first element is now the last
+            # and the second element is now the first element
+            xp_j1 = np.roll(x_j1, shift=-1)
+            xp_j2 = np.roll(x_j2, shift=-1)
+
+            Omat[:, a, a] = np.exp(-tau * Ea_tilde[a])
+            Omat[:, a, a] *= np.exp(S_j1 * (x_j1 * xp_j1) - 0.5 * C_j1 * (x_j1**2 + xp_j1**2))
+            Omat[:, a, a] *= np.exp(S_j2 * (x_j2 * xp_j2) - 0.5 * C_j2 * (x_j2**2 + xp_j2**2))
+
+        # don't forget the prefactor
+        Omat *= (F_j1 * F_j2)
+
+        return Omat
+
+    def build_m_matrix(q_j2):
+        """ x """
+
+        # build M matrix
+        Mmat = np.zeros((P, na, na), float)
+        Vmat = np.zeros((P, na, na), float)
+        # Vmat_diag = np.zeros((na, na), float)
+
+        if model == 'Displaced':
+            Vmat[:, 0, 1] = displaced['gamma'][system_index] * q_j2
+            Vmat[:, 1, 0] = Vmat[:, 0, 1]
+        # if model == 'Jahn_Teller':
+        #     Vmat[:, 0, 1] = jahn_teller['lambda'][system_index] * q_j2
+        #     Vmat[:, 1, 0] = Vmat[:, 0, 1]
+
+        for p in range(P):
+            Vvals, Vvecs = np.linalg.eigh(Vmat[p, :, :])
+            Vmat_diag = np.diag(np.exp(-tau * Vvals))
+            Mmat[p, ...] = np.dot(Vvecs, np.dot(Vmat_diag, np.transpose(Vvecs)))
+
+        return Mmat
+
+    # build O matrix
+    Omat = build_o_matrix(old_q_j1, old_q_j2)
+
+    # build M matrix
+    Mmat = build_m_matrix(old_q_j2)
+
+    # build old g without trace
+    # sum_a' O(R,R',a,a')_daa' . M(R',a',a'')= O(R,R',a,a)M(R',a,a'')
+    old_g = np.identity(na)
+    for p in range(P):
+        old_g = np.dot(old_g, np.dot(Omat[p], Mmat[p]))
+
+    # ------------------------ Monte Carlo -----------------------------
+    # initialize
+    nof_samples = int(1e3)
+    accept_counter = 0
+    file_contents = ''  # where we store the results
+
+    # preform the Monte Carlo
+    for step_index in range(nof_samples):
+        new_a_index = rng.choice(na, 1, p=Prob_a)[0]
+        new_q_j1, new_q_j2, new_rhoA = propose_new_state(new_a_index)
+
+        # build O matrix
+        Omat = build_o_matrix(new_q_j1, new_q_j2)
+
+        # build M matrix
+        Mmat = build_m_matrix(new_q_j2)
+
+        # build old g without trace
+        # sum_a' O(R,R',a,a')_daa' . M(R',a',a'')= O(R,R',a,a)M(R',a,a'')
+        new_g = np.identity(na)
+        for p in range(P):
+            new_g = np.dot(new_g, np.dot(Omat[p], Mmat[p]))
+
+        # compute the acceptance ratio
+        acceptance_ratio = new_g[new_a_index, new_a_index] / old_g[old_a_index, old_a_index]
+        acceptance_ratio *= old_rhoA / new_rhoA
+
+        u = rng.random()  # draw from uniform distribution
+        if u <= acceptance_ratio:
+            accept_counter += 1
+            old_a_index = new_a_index
+            old_g = new_g
+            old_rhoA = new_rhoA
+            old_q_j1 = new_q_j1
+            old_q_j2 = new_q_j2
+
+        # store the results (list comprehension would be faster maybe?)
+        for p in range(P):
+            file_contents += f"{str(step_index*P + p)} {old_q_j1[p]} {old_q_j2[p]} {old_a_index}\n"
+
+    # EOL
+    print(f"acceptance ratio = {accept_counter / nof_samples}")
+
+    # write to file
+    path = make_output_data_path(
+        f'x1x2_{model.lower()}_{system_index+1}_P{P}.dat'
+    )
+    with open(path, 'w') as fp:
+        fp.write(file_contents)
+
+    if True:
+        calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  kmax, basis)
+
+    return
+
 # ------------------------------ Statistics -----------------------------------
 
 
@@ -427,6 +667,21 @@ def calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T
 
     # extract the vectors
     T1, T2 = T_list
+
+    def write_rho_a_ap_to_file(t_index, rhoa):
+        """ x """
+
+        rhoa_filedata = ''
+        for a, ap in it.product(range(na), range(na)):
+            rhoa_filedata += f"{a} {ap} {rhoa[a, ap]}\n"
+
+        # save to file
+        path = make_output_data_path(
+            f"{model.lower()}_{system_index+1}"
+            f"_rhoa_T{t_index}.dat"
+        )
+        with open(path, 'w') as fp:
+            fp.write(rhoa_filedata)
 
     def write_h1_to_file(t_index, rho1):
         h1 = np.zeros(n1, float)
@@ -506,20 +761,63 @@ def calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T
         with open(path, 'w') as fp:
             fp.write(w12_filedata)
 
-    def write_rhoa_to_file(t_index, rhoa):
+    def write_h1a_to_file(t_index, rho1a):
         """ x """
+        h1a = np.zeros((n1, na), float)
+        rho1a_filedata = ''
 
-        rhoa_filedata = ''
-        for a, ap in it.product(range(na), range(na)):
-            rhoa_filedata += f"{a} {ap} {rhoa[a, ap]}\n"
+        for i1 in range(n1):
+            grid1_contribution = np.exp(-grid1[i1]**2) / (np.sqrt(np.pi)*T1[0, i1]**2)
 
-        # save to file
+            rho1a_filedata += f"{grid1[i1]}"
+            for a in range(na):
+                h1a[i1, a] = rho1a[i1, a]
+
+                # multiply by Gauss-Hermite weight
+                h1a[i1, a] *= grid1_contribution
+
+                # append line to string data
+                rho1a_filedata += " " + f"{h1a[i1, a]}"
+
+            # end the line
+            rho1a_filedata += "\n"
+
+        # write to file
         path = make_output_data_path(
             f"{model.lower()}_{system_index+1}"
-            f"_rhoa_T{t_index}.dat"
+            f"_h1a_T{t_index}.dat"
         )
         with open(path, 'w') as fp:
-            fp.write(rhoa_filedata)
+            fp.write(rho1a_filedata)
+
+    def write_h2a_to_file(t_index, rho2a):
+        """ x """
+        h2a = np.zeros((n2, na), float)
+        rho2a_filedata = ''
+
+        for i2 in range(n2):
+            grid2_contribution = np.exp(-grid2[i2]**2) / (np.sqrt(np.pi)*T2[0, i2]**2)
+
+            rho2a_filedata += f"{grid2[i1]}"
+            for a in range(na):
+                h2a[i2, a] = rho2a[i2, a]
+
+                # multiply by Gauss-Hermite weight
+                h2a[i2, a] *= grid2_contribution
+
+                # append line to string data
+                rho2a_filedata += " " + f"{h2a[i2, a]}"
+
+            # end the line
+            rho2a_filedata += "\n"
+
+        # write to file
+        path = make_output_data_path(
+            f"{model.lower()}_{system_index+1}"
+            f"_h2a_T{t_index}.dat"
+        )
+        with open(path, 'w') as fp:
+            fp.write(rho2a_filedata)
 
     # the temperatures we will evaluate our distributions at
     temperature_list = [0.1, 1., 2., 5., 10.]
@@ -541,8 +839,12 @@ def calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T
         rho1 = np.zeros((n1), float)
         rho2 = np.zeros((n2), float)
         rho12 = np.zeros((n1, n2), float)
+
+        rho1a = np.zeros((n1, na), float)
+        rho2a = np.zeros((n2, na), float)
+
         w12 = np.zeros((n1, n2), float)
-        rhoa = np.zeros((na, na), float)
+        rho_a_ap = np.zeros((na, na), float)
 
         t = T_val * (delta_E / eV_per_K)
 
@@ -552,40 +854,43 @@ def calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T
             flattened_index = (a*n1+i1)*n2+i2
             flattened_index2 = (ap*n1+i1)*n2+i2
 
-            rhoa[a, ap] += np.sum(
+            rho_a_ap[a, ap] += np.sum(
                 evecs[flattened_index, :] * evecs[flattened_index2, :] * exponent
             )
 
         for i1, i2, a in it.product(range(n1), range(n2), range(na)):
+
             flattened_index = (a*n1+i1)*n2+i2
 
-            rho1[i1] += np.sum(
+            sum_result = np.sum(
                 (evecs[flattened_index, :]**2) * exponent
             )
 
-            rho12[i1, i2] += np.sum(
-                (evecs[flattened_index, :]**2) * exponent
-            )
+            rho1[i1] += sum_result
+            rho2[i2] += sum_result
 
-        for i2, i1, a in it.product(range(n2), range(n1), range(na)):
-            flattened_index = (a*n1+i1)*n2+i2
-            rho2[i2] += np.sum(
-                (evecs[flattened_index, :]**2) * exponent
-            )
+            rho12[i1, i2] += sum_result
+
+            rho1a[i1, a] += sum_result
+            rho2a[i2, a] += sum_result
 
         # normalize the distributions
+        rho_a_ap /= Z[idx]  # rho(a, a')
         rho1 /= Z[idx]  # rho(q1)
         rho2 /= Z[idx]  # rho(q2)
         rho12 /= Z[idx]  # rho(q1, q2)
-        rhoa /= Z[idx]  # rho(a)
+        rho1a /= Z[idx]  # rho(q1; a)
+        rho2a /= Z[idx]  # rho(q2; a)
 
         w12 -= t*eV_per_K*np.log(rho12)
 
         # write all the distributions to file
+        write_rho_a_ap_to_file(T_val, rho_a_ap)
         write_h1_to_file(T_val, rho1)
         write_h2_to_file(T_val, rho2)
         write_h12_w12_to_file(T_val, rho12, w12)
-        write_rhoa_to_file(T_val, rhoa)
+        write_h1a_to_file(T_val, rho1a)
+        write_h2a_to_file(T_val, rho2a)
 
     return
 
@@ -764,11 +1069,9 @@ def build_full_hamiltonian(N, dvr_h_terms, fbr_h_terms, grids, q_mats, system_in
 
 def main(model, system_index, plotting=False, fbr_flag=False):
     """
-
     if `plotting` is True then generate plots after all calculations.
     if `fbr_flag` is True then compute H in the Full Basis Representation
         in addition to the DVR.
-
     """
 
     # basis sizes (store in dictionary for easy passing to functions)
@@ -816,6 +1119,10 @@ def main(model, system_index, plotting=False, fbr_flag=False):
     # evals, evecs = eigsh(A_total, k=k_max, which = 'SA', maxiter=niter)
     evals, evecs = eigsh(dvr_H_total, k=k_max, which='SA')
 
+    n_short = 5
+    np.set_printoptions(precision=16)
+    print(f"First {n_short} eigenvalues:\n{evals[0:n_short]}")
+
     if fbr_flag:
         # compare norms
 
@@ -852,8 +1159,16 @@ def main(model, system_index, plotting=False, fbr_flag=False):
         'Displaced': evals[1] - evals[0],
         'Jahn_Teller': evals[2] - evals[0],  # use next gap because Jahn_Teller is degenerate
     }.get(model, 1.0)
-
     assert delta_E != 1.0, 'not a supported model'
+
+    # shifted_E = (evals[0:n_short] - evals[0])
+    theta = delta_E / kB
+    print(f"{theta = }")
+    # beta = 1. / (kB * theta)
+    # probs = np.exp(-beta * shifted_E)
+    # Z = np.sum(probs)
+    # probs /= Z
+    # print(f"At T={theta}K\nFirst {n_short} probabilities:\n{probs}")
 
     if plotting:
         # figure and axis dictionaries
@@ -874,7 +1189,9 @@ def main(model, system_index, plotting=False, fbr_flag=False):
         label_plots(fig_d, ax_d, model, system_index)
     #
 
-    calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  k_max, basis)
+    # calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  k_max, basis)
+
+    monte_carlo_test(model, system_index, theta, basis)
 
 
 def profiling_code(model, system_index, plot):
@@ -930,11 +1247,11 @@ if (__name__ == "__main__"):
 
     # user input override (if any input)
     model, system_index = get_simple_user_input(model, system_index)
+    assert 0 <= system_index <= 5, f'Currently only takes 0,1,2,3,4, or 5, not {system_index}'
 
-    plot = True  # if plotting the results
+    plot = False  # if plotting the results
 
     # profiling_code(model, system_index, plot)
 
     # run
-    assert 0 <= system_index <= 5, f'Currently only takes 0,1,2,3,4, or 5, not {system_index}'
     main(model, system_index, plot)
