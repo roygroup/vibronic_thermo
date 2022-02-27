@@ -403,13 +403,13 @@ def main(model, system_index,distributions=False):
                 h1=rho1[i1]
             # multiply by gauss hermite weight
                 h1*=np.exp(-grid1[i1]**2)/(np.sqrt(np.pi)*T1[0,i1]**2)
-                rho1_out.write(str(grid1[i1])+' '+str(h1)+'\n')
+                rho1_out.write(str(grid1[i1])+' '+str(h1)+' '+str(-t*eV_per_K*np.log(h1))+'\n')
     
             for i2 in range(n2):
                 h2=rho2[i2]
             # multiply by gauss hermite weight
                 h2*=np.exp(-grid2[i2]**2)/(np.sqrt(np.pi)*T2[0,i2]**2)
-                rho2_out.write(str(grid2[i2])+' '+str(h2)+'\n')
+                rho2_out.write(str(grid2[i2])+' '+str(h2)+' '+str(-t*eV_per_K*np.log(h2))+'\n')
 
             for i1 in range(n1):
                 for i2 in range(n2):
