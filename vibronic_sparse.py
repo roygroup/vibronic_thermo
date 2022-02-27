@@ -6,13 +6,11 @@ THE JOURNAL OF CHEMICAL PHYSICS 148, 194110 (2018)
 
 # system imports
 import itertools as it
-
 # third party imports
 import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import eigsh
 from scipy.sparse.linalg import LinearOperator
-<<<<<<< HEAD
 from numpy.random import default_rng
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
