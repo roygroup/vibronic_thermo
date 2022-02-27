@@ -126,7 +126,7 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1):
     for a in range(na): 
         Ea_tilde_samp[a]=Ea_tilde_samp[a]-Ea_tilde0_samp
 
-    P=100
+    P=8
     # D, gamma=0.08 Theta= 226.38994229156003  K model 2
     T=300.
 
@@ -141,8 +141,8 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1):
     Prob_a=np.zeros(2,float)
     a_norm=0.
     for a in range(na):
-        Prob_a[a]=np.exp(-beta*(Ea_tilde_samp[a]))
-        #Prob_a[a]=np.exp(-beta*(displaced['energy'][a]-displaced['energy'][0]))
+        #Prob_a[a]=np.exp(-beta*(Ea_tilde_samp[a]))
+        Prob_a[a]=np.exp(-beta*(Ea_uniform[a]))
         a_norm+=Prob_a[a]
     Prob_a=(1./a_norm)*Prob_a
     logfile.write(str(Prob_a)+'\n')
@@ -196,9 +196,9 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1):
 
 #initial condition for uniform sampling
 
-    #for p in range(P):
-    #    q1[p]=0.
-    #    q2[p]=0.
+    for p in range(P):
+        q1[p]=0.
+        q2[p]=0.
 
 # calculate g without trace
     # build O matrix
@@ -250,13 +250,14 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1):
 
     accept=0
 
-    dq1 = 2.
-    dq2 = 4.
+    dq1 = 1.
+    dq2 = 1.
     q1_new=np.zeros(P,float)
     q2_new=np.zeros(P,float)
 
     step_count = 0
     for step in range(N_total):  
+
         index_new=rng.choice(na,p=Prob_a)
 
         x1_new = np.random.multivariate_normal(mean1, cov1)
@@ -266,18 +267,18 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1):
         q2_new=x2_new+dja_samp[1,index_new]
 
 # uniform sampling
-        #for p in range(P):
-        #    q1_new[p]=q1[p]
-        #    q2_new[p]=q2[p]
+        for p in range(P):
+            q1_new[p]=q1[p]
+            q2_new[p]=q2[p]
 
         p=np.random.randint(0,P)
 
         #for p in range(P):
         n=np.random.randint(0,2)
-        #if n==0:
-        #    q1_new[p]=q1[p]+dq1*(2.*np.random.rand()-1.)
-        #if n==1:
-        #    q2_new[p]=q2[p]+dq2*(2.*np.random.rand()-1.)
+        if n==0:
+            q1_new[p]=q1[p]+dq1*(2.*np.random.rand()-1.)
+        if n==1:
+            q2_new[p]=q2[p]+dq2*(2.*np.random.rand()-1.)
 
         pi_1=np.exp(-.5*(np.dot(x1_new,np.dot(cov1inv,x1_new))))
         pi_2=np.exp(-.5*(np.dot(x2_new,np.dot(cov2inv,x2_new))))
@@ -320,8 +321,8 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1):
         for p in range(1,P):
             g_new=np.dot(g_new,np.dot(Omat_new[p],Mmat[p]))
 #        ratio=g_new[index_new,index_new]/g_old[index,index]*wa_rhoa_old/wa_rhoa_new
-        ratio=np.trace(g_new)/np.trace(g_old)*wa_rhoa_old/wa_rhoa_new
-#        ratio=g_new[index_new,index_new]/g_old[index,index]*np.exp(-beta*(Ea_uniform[index]-Ea_uniform[index_new]))
+#        ratio=np.trace(g_new)/np.trace(g_old)*wa_rhoa_old/wa_rhoa_new
+        ratio=np.trace(g_new)/np.trace(g_old)
         #print(ratio)
         if (ratio >= rng.random()):
             accept+=1
@@ -349,5 +350,5 @@ if (__name__ == "__main__"):
     system_index = 5 # 0..5 for Displaced and Jahn-Teller
     # run
     system_index=int(sys.argv[1])
-    main(model, system_index,N_total=100000,N_equilibration=1000,N_skip=1)
+    main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1)
 
