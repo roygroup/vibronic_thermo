@@ -401,10 +401,6 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             for a in range(na):
                 for ap in range(na):
                     Mmat[p,a,ap]=Vmatp[a,ap]
-                    if a==ap:
-                        Mmat[p,a,ap]=1.
-                    else:
-                        Mmat[p,a,ap]=0.
         g_new=np.dot(Omat_new[0],Mmat[0])
         for p in range(1,P):
             g_new=np.dot(g_new,np.dot(Omat_new[p],Mmat[p]))
@@ -455,5 +451,5 @@ if (__name__ == "__main__"):
     system_index = 5 # 0..5 for Displaced and Jahn-Teller
     # run
     system_index=int(sys.argv[1])
-    main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1,Sampling_type='GMD')
+    main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1,Sampling_type='Direct')
     # GMD_reduced, GME, Direct, Uniform
