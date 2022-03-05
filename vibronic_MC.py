@@ -21,6 +21,7 @@ def B(size):
 eV_per_K=8.617333262e-5
 kB=eV_per_K
 
+
 #displaced model parameters (all in eV)
 displaced = {
     'energy': [0.0996, 0.1996],
@@ -37,7 +38,7 @@ jahn_teller = {
 }
 def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling_type='GMD'):
  # basis sizes (store in dictionary for easy passing to functions)
-    na =2 
+    na =2
     nmodes=2
     if model=='Displaced':
         w1=displaced['w1']
@@ -86,15 +87,15 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
 
         Ea_tilde0=Ea0+Delta0
         Ea_tilde1=Ea1+Delta1
-      
+
     Ea_uniform=np.zeros(2,float)
     Ea_uniform[0]=displaced['energy'][0]
     Ea_uniform[1]=displaced['energy'][1]
-    
+
     Ea_tilde=np.zeros(2,float)
     Ea_tilde[0]=Ea_tilde0
     Ea_tilde[1]=Ea_tilde1
-    for a in range(na): 
+    for a in range(na):
         Ea_tilde[a]=Ea_tilde[a]-Ea_tilde[0]
     if model=='Jahn_Teller':
         da0_1=-jahn_teller['lambda'][system_index]/w1
@@ -123,7 +124,7 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
     Ea_tilde_samp=np.zeros(2,float)
     Ea_tilde_samp[0]=Ea_tilde0_samp
     Ea_tilde_samp[1]=Ea_tilde1_samp
-    for a in range(na): 
+    for a in range(na):
         Ea_tilde_samp[a]=Ea_tilde_samp[a]-Ea_tilde_samp[0]
 
     P=64
@@ -329,7 +330,7 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
     index_new=index
 
     step_count = 0
-    for step in range(N_total):  
+    for step in range(N_total):
 
         if Sampling_type=='GMD' or Sampling_type=='GMD_reduced':
             index_new=rng.choice(na,p=Prob_a)
@@ -419,13 +420,13 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
                     g_new_scalar*=((Mmat[p,a_new[p],a_new[p+1]]))*np.exp(-tau*Ea_tilde[a_new[p]]+(S1*(x1*x1p)-.5*C1*(x1**2+x1p**2))+(S2*(x2*x2p)-.5*C2*(x2**2+x2p**2)))
                 else:
                     g_new_scalar*=((Mmat[P-1,a_new[P-1],a_new[0]]))*np.exp(-tau*Ea_tilde[a_new[P-1]]+(S1*(x1*x1p)-.5*C1*(x1**2+x1p**2))+(S2*(x2*x2p)-.5*C2*(x2**2+x2p**2)))
-            
+
             ratio_num=g_new_scalar*wa_rhoa_old_all
             ratio_denom=g_old_scalar*wa_rhoa_new_all
             ratio=ratio_num/ratio_denom
             print(g_old_scalar,g_new_scalar)
 
-        
+
         if (ratio >= rng.random()):
             accept+=1
             for p in range(P):
@@ -457,4 +458,3 @@ if (__name__ == "__main__"):
     system_index=int(sys.argv[1])
     main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1,Sampling_type='GMD')
     # GMD_reduced, GME, Direct, Uniform
-
