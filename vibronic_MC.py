@@ -426,7 +426,6 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             ratio=ratio_num/ratio_denom
             print(g_old_scalar,g_new_scalar)
 
-
         if (ratio >= rng.random()):
             accept+=1
             for p in range(P):
