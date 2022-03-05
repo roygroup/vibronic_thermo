@@ -170,7 +170,7 @@ def main(model, system_index,distributions=False):
                 u[(((a-1)*n1+i1)*n2+i2)]=param_times_grid2[i2]*v[((a*n1+i1)*n2+i2)]
         return u
  # basis sizes (store in dictionary for easy passing to functions)
-    n1, n2, na =70, 70, 2
+    n1, n2, na =80, 80, 2
     nmodes=2
     basis = {'n1': n1, 'n2': n2, 'a': na}
 
