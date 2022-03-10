@@ -127,7 +127,7 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
     for a in range(na):
         Ea_tilde_samp[a]=Ea_tilde_samp[a]-Ea_tilde_samp[0]
 
-    P=64
+    P=8
     # D, gamma=0.08 Theta= 226.38994229156003  K model 2
     T=300.
 
@@ -140,16 +140,21 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
     logfile.write('beta (eV) = '+str(beta)+'\n')
 
     Prob_a=np.zeros(2,float)
+    Prob_e=np.zeros(2,float)
     Prob_a_all=np.zeros(2,float)
     a_norm=0.
+    e_norm=0.
     a_norm_all=0.
     for a in range(na):
+        Prob_e[a]=np.exp(-tau*Ea_tilde[a])
         Prob_a[a]=np.exp(-beta*(Ea_tilde_samp[a]))
         Prob_a_all[a]=np.exp(-tau*(Ea_tilde_samp[a]))
         #Prob_a[a]=np.exp(-beta*(Ea_uniform[a]))
         a_norm+=Prob_a[a]
+        e_norm+=Prob_e[a]
         a_norm_all+=Prob_a_all[a]
     Prob_a=(1./a_norm)*Prob_a
+    Prob_e=(1./e_norm)*Prob_e
     Prob_a_all=(1./a_norm_all)*Prob_a_all
     logfile.write('Prob_a '+str(Prob_a)+'\n')
     logfile.write('Prob_a_all '+str(Prob_a_all)+'\n')
@@ -199,10 +204,17 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
     outx1x2=open('x1x2'+str(model)+str(system_index)+'.dat','w')
     # recommanded numpy random number initialization
     #initial conditions
-    index=rng.choice(na,p=Prob_a)
-
+    #index=rng.choice(na,p=Prob_a)
+    # try all zeros
+    # sma initial condition for all methods
     x1old = np.random.multivariate_normal(mean1, cov1)
     x2old = np.random.multivariate_normal(mean2, cov2)
+    index=0
+    a_old=rng.choice(na,P,p=Prob_a_all)
+    for p in range(P):
+        a_old[p]=0
+        x1old[p]=0.
+        x2old[p]=0.
 
     q1=x1old+dja_samp[0,index]
     q2=x2old+dja_samp[1,index]
@@ -210,20 +222,13 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
     pi_1=np.exp(-.5*(np.dot(x1old,np.dot(cov1inv,x1old))))
     pi_2=np.exp(-.5*(np.dot(x2old,np.dot(cov2inv,x2old))))
 
-    #wa_rhoa_old=np.exp(-beta*Ea_tilde_samp[index])*((F1_samp*F2_samp)**P)*pi_1*pi_2
     wa_rhoa_old=pi_1*pi_2
     wa_rhoa_old*=np.exp(-beta*Ea_tilde_samp[index])
 
     wa_rhoa_old_all=np.exp(-.5*(np.dot(x1old,np.dot(cov1inv,x1old)))-.5*(np.dot(x2old,np.dot(cov2inv,x2old))))
     #modified above for mode bead sampling
-    a_old=rng.choice(na,P,p=Prob_a_all)
     for p in range(P):
         wa_rhoa_old_all*=(-tau*Ea_tilde_samp[a_old[p]])
-    # q from all mode beads
-    if Sampling_type=='Direct':
-        for p in range(P):
-            q1[p]=x1old[p]+dja_samp[0,a_old[p]]
-            q2[p]=x2old[p]+dja_samp[1,a_old[p]]
 
 # calculate g without trace
     # build O matrix
@@ -244,7 +249,6 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             Omat[p,a,a]=np.exp(-tau*Ea_tilde[a])
             Omat[p,a,a]*=np.exp(S1*(x1*x1p)-.5*C1*(x1**2+x1p**2))
             Omat[p,a,a]*=np.exp(S2*(x2*x2p)-.5*C2*(x2**2+x2p**2))
-
             Omat_E[p,a,a]=Ea_tilde[a]+S1*(x1*x1p)*S1_prime-.5*C1*(x1**2+x1p**2)*C1_prime
             Omat_E[p,a,a]+=S2*(x2*x2p)*S2_prime-.5*C2*(x2**2+x2p**2)*C2_prime
 
@@ -278,30 +282,6 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             for ap in range(na):
                 Mmat[p,a,ap]=Vmatp[a,ap]
                 Mmat_E[p,a,ap]=Vmatp_E[a,ap]
-    """ qmin=-10.
-    qmax=10.
-    Nq=100
-    dq=(qmax-qmin)/Nq
-    for i in range(Nq):
-        qval=qmin+i*dq
-        Vmat[0,0]=0.
-        Vmat[1,1]=0.
-        Vmat[0,1]=displaced['gamma'][system_index]*qval
-        Vmat[1,0]=Vmat[0,1]
-        Vval,Vvec=np.linalg.eigh(Vmat)
-        for a in range(na):
-            Vmat_diag[a,a]=np.exp(-tau*Vval[a])
-        Vmatp=np.dot(Vvec,np.dot(Vmat_diag,np.transpose(Vvec)))
-        print(qval,Vmatp[0,0],Vmatp[1,1],Vmatp[0,1],Vmatp[1,0]) """
- # build g
- # sum_a' O(R,R',a,a')_daa' . M(R',a',a'')= O(R,R',a,a)M(R',a,a'')
-    #print(Omat)
-    #print(Mmat)
-    # for p in range(P):
-    #     for a in range(na):
-    #         for ap in range(na):
-    #             Omat[p,a,ap]+=1.e-16
-    #             Mmat[p,a,ap]+=1.e-16
 
     g_old=np.zeros((na,na),float)
     g_old=np.dot(Omat[0],Mmat[0])
@@ -321,17 +301,18 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
 
     dq1 = 1.
     dq2 = 1.
-    q1_new=np.zeros(P,float)
-    q2_new=np.zeros(P,float)
+    q1_new=q1.copy()
+    q2_new=q2.copy()
     a_new=a_old.copy()
     g_new_scalar=g_old_scalar
     wa_rhoa_new_all=wa_rhoa_old_all
     wa_rhoa_new=wa_rhoa_old
     index_new=index
+    pi_new=1.
+    pi_old=1.
 
     step_count = 0
     for step in range(N_total):
-
         if Sampling_type=='GMD' or Sampling_type=='GMD_reduced':
             index_new=rng.choice(na,p=Prob_a)
             x1_new = np.random.multivariate_normal(mean1, cov1)
@@ -342,7 +323,6 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             pi_1=np.exp(-.5*(np.dot(x1_new,np.dot(cov1inv,x1_new))))
             pi_2=np.exp(-.5*(np.dot(x2_new,np.dot(cov2inv,x2_new))))
             wa_rhoa_new=np.exp(-beta*Ea_tilde_samp[index_new])*pi_1*pi_2
-
         elif Sampling_type=='Direct':
             x1_new = np.random.multivariate_normal(mean1, cov1)
             x2_new = np.random.multivariate_normal(mean2, cov2)
@@ -350,21 +330,53 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             for p in range(P):
                 q1_new[p]=x1_new[p]+dja_samp[0,a_new[p]]
                 q2_new[p]=x2_new[p]+dja_samp[1,a_new[p]]
-
             wa_rhoa_new_all=np.exp(-.5*(np.dot(x1_new,np.dot(cov1inv,x1_new))))+(-.5*(np.dot(x2_new,np.dot(cov2inv,x2_new))))
             for p in range(P):
-                wa_rhoa_new_all*=(-tau*Ea_tilde_samp[a_new[p]])
-
+                wa_rhoa_new_all*=np.exp(-tau*Ea_tilde_samp[a_new[p]])
         elif Sampling_type=='Uniform':
+            # S1*(x*xp)-.5*C1*(x**2+xp**2))*S1*(x*xm)-.5*C1*(x**2+xm**2))
             for p in range(P):
                 q1_new[p]=q1[p]
                 q2_new[p]=q2[p]
+                a_new[p]=a_old[p]
+            #choose a bead
             p=np.random.randint(0,P)
-            n=np.random.randint(0,2)
-            if n==0:
-                q1_new[p]=q1[p]+dq1*(2.*np.random.rand()-1.)
-            if n==1:
-                q2_new[p]=q2[p]+dq2*(2.*np.random.rand()-1.)
+            # choose a particle
+            i=np.random.randint(0,3)
+            # define neihgbourind beads
+            x=0.
+            x_plus=0.
+            x_minus=0.
+            if i==0:
+                x_plus=q1[(p+1)%P]-dja[0,index_new]
+                x_minus=q1[(p-1)%P]-dja[0,index_new]
+                x=q1[p]-dja[0,index_new]
+                mean=(0.5*S1*(x_plus + x_minus))/C1
+                sigma=1./np.sqrt(2.*C1)
+                x_new = np.random.normal(mean, sigma)
+                q1_new[p]=x_new+dja[0,index_new]
+                x_old=q1[p]-dja[0,index]
+                pi_new=np.exp(-((x_new-mean)**2)/(2.*sigma**2))
+                pi_old=np.exp(-((x_old-mean)**2)/(2.*sigma**2))
+            elif i==1:
+                x_plus=q2[(p+1)%P]-dja[1,index_new]
+                _minus=q2[(p-1)%P]-dja[1,index_new]
+                x=q2[p]-dja[1,index_new]
+                mean=(0.5*S2*(x_plus + x_minus))/C2
+                sigma=1./np.sqrt(2.*C2)
+                x_new = np.random.normal(mean, sigma)
+                q2_new[p]=x_new+dja[1,index_new]
+                x_old=q2[p]-dja[1,index]
+                pi_new=np.exp(-((x_new-mean)**2)/(2.*sigma**2))
+                pi_old=np.exp(-((x_old-mean)**2)/(2.*sigma**2))
+            else:
+                # choose a surface
+                index_new=rng.choice(na,p=Prob_e)
+                # update surface
+                a_new[p]=index_new
+                pi_new=Prob_e[index_new]
+                pi_old=Prob_e[index]
+
 
         Omat_new=np.zeros((P,2,2),float)
         for p in range(P):
@@ -404,25 +416,30 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
         g_new=np.dot(Omat_new[0],Mmat[0])
         for p in range(1,P):
             g_new=np.dot(g_new,np.dot(Omat_new[p],Mmat[p]))
+
+        g_new_scalar=1.
+        for p in range(P):
+            if p+1<P:
+                g_new_scalar*=((Mmat[p,a_new[p],a_new[p+1]]))*Omat_new[p,a_new[p],a_new[p]]
+            else:
+                g_new_scalar*=((Mmat[p,a_new[p],a_new[0]]))*Omat_new[p,a_new[p],a_new[p]]
+
         ratio=1.
         if Sampling_type=='GMD':
             ratio=g_new[index_new,index_new]/g_old[index,index]*wa_rhoa_old/wa_rhoa_new
         if Sampling_type=='GMD_reduced':
             ratio=np.trace(g_new)*wa_rhoa_old/(np.trace(g_old)*wa_rhoa_new)
         if Sampling_type=='Direct':
-            g_new_scalar=1.
-            for p in range(P):
-                if p+1<P:
-                    g_new_scalar*=((Mmat[p,a_new[p],a_new[p+1]]))*np.exp(-tau*Ea_tilde[a_new[p]]+(S1*(x1*x1p)-.5*C1*(x1**2+x1p**2))+(S2*(x2*x2p)-.5*C2*(x2**2+x2p**2)))
-                else:
-                    g_new_scalar*=((Mmat[P-1,a_new[P-1],a_new[0]]))*np.exp(-tau*Ea_tilde[a_new[P-1]]+(S1*(x1*x1p)-.5*C1*(x1**2+x1p**2))+(S2*(x2*x2p)-.5*C2*(x2**2+x2p**2)))
-
             ratio_num=g_new_scalar*wa_rhoa_old_all
             ratio_denom=g_old_scalar*wa_rhoa_new_all
             ratio=ratio_num/ratio_denom
-            print(g_old_scalar,g_new_scalar)
+        if Sampling_type=='Uniform':
+            ratio_num=g_new_scalar*pi_old
+            ratio_denom=g_old_scalar*pi_new
+            ratio=ratio_num/ratio_denom
 
         if (ratio >= rng.random()):
+        #if (ratio >= 0.):
             accept+=1
             for p in range(P):
                 q1[p]=q1_new[p]
@@ -435,12 +452,11 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             wa_rhoa_old=wa_rhoa_new
             g_old_scalar=g_new_scalar
             wa_rhoa_old_all=wa_rhoa_new_all
-
+            pi_old=pi_new
         if step>N_equilibration and step%N_skip==0:
             for p in range(P):
                 step_count+=1
                 outx1x2.write(str(step_count)+' '+str(q1[p])+' '+str(q2[p])+' '+str(index)+' '+str(a_old[p])+' '+str(ratio)+'\n')
-
     logfile.write('MC acceptance ratio = '+str(accept/N_total)+'\n')
     logfile.close()
 
@@ -451,5 +467,6 @@ if (__name__ == "__main__"):
     system_index = 5 # 0..5 for Displaced and Jahn-Teller
     # run
     system_index=int(sys.argv[1])
-    main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1,Sampling_type='Direct')
-    # GMD_reduced, GME, Direct, Uniform
+    main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1,Sampling_type='Uniform')
+    # GMD_reduced, GMD, Direct, Uniform
+    # too much rejection with direct. try mid-point sampling
