@@ -127,7 +127,7 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
     for a in range(na):
         Ea_tilde_samp[a]=Ea_tilde_samp[a]-Ea_tilde_samp[0]
 
-    P=8
+    P=16
     # D, gamma=0.08 Theta= 226.38994229156003  K model 2
     T=300.
 
@@ -330,7 +330,7 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             for p in range(P):
                 q1_new[p]=x1_new[p]+dja_samp[0,a_new[p]]
                 q2_new[p]=x2_new[p]+dja_samp[1,a_new[p]]
-            wa_rhoa_new_all=np.exp(-.5*(np.dot(x1_new,np.dot(cov1inv,x1_new))))+(-.5*(np.dot(x2_new,np.dot(cov2inv,x2_new))))
+            wa_rhoa_new_all=np.exp(-.5*(np.dot(x1_new,np.dot(cov1inv,x1_new)))-.5*(np.dot(x2_new,np.dot(cov2inv,x2_new))))
             for p in range(P):
                 wa_rhoa_new_all*=np.exp(-tau*Ea_tilde_samp[a_new[p]])
         elif Sampling_type=='Uniform':
@@ -344,13 +344,12 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
             # choose a particle
             i=np.random.randint(0,3)
             # define neihgbourind beads
-            x=0.
+            x_old=0.
             x_plus=0.
             x_minus=0.
             if i==0:
                 x_plus=q1[(p+1)%P]-dja[0,index_new]
                 x_minus=q1[(p-1)%P]-dja[0,index_new]
-                x=q1[p]-dja[0,index_new]
                 mean=(0.5*S1*(x_plus + x_minus))/C1
                 sigma=1./np.sqrt(2.*C1)
                 x_new = np.random.normal(mean, sigma)
@@ -360,8 +359,7 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
                 pi_old=np.exp(-((x_old-mean)**2)/(2.*sigma**2))
             elif i==1:
                 x_plus=q2[(p+1)%P]-dja[1,index_new]
-                _minus=q2[(p-1)%P]-dja[1,index_new]
-                x=q2[p]-dja[1,index_new]
+                x_minus=q2[(p-1)%P]-dja[1,index_new]
                 mean=(0.5*S2*(x_plus + x_minus))/C2
                 sigma=1./np.sqrt(2.*C2)
                 x_new = np.random.normal(mean, sigma)
@@ -376,7 +374,6 @@ def main(model, system_index,N_total=10000,N_equilibration=100,N_skip=1,Sampling
                 a_new[p]=index_new
                 pi_new=Prob_e[index_new]
                 pi_old=Prob_e[index]
-
 
         Omat_new=np.zeros((P,2,2),float)
         for p in range(P):
@@ -467,6 +464,6 @@ if (__name__ == "__main__"):
     system_index = 5 # 0..5 for Displaced and Jahn-Teller
     # run
     system_index=int(sys.argv[1])
-    main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1,Sampling_type='Uniform')
+    main(model, system_index,N_total=400000,N_equilibration=10,N_skip=1000,Sampling_type='Uniform')
     # GMD_reduced, GMD, Direct, Uniform
     # too much rejection with direct. try mid-point sampling
