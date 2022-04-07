@@ -84,273 +84,363 @@ def build_b_matrix(basis_size):
     return Bmat
 
 
-def calculate_o_matrix():
+def calculate_o_matrix(parameters, q1, q2, system_args, stat_props):
     """ calculate g without trace i.e. O matrix """
+
+    # unpack parameters
+    A = parameters['nof_surfaces']
+    # N = parameters['nof_modes']
+    P = parameters['P']
+    # T = parameters['T']
+    # beta = parameters['beta']
+    tau = parameters['tau']
+
+    # unpack parameters
+    Ea_tilde = system_args['Ea_tilde']
+
+    # displacement (N x A) versus (A x N)
+    dja = system_args['flipped_displacement']
+    # dja_samp = system_args['flipped_displacement_samp']
+
+    F = stat_props['F']
+    S = stat_props['S']
+    C = stat_props['C']
+
     o_matrix = np.zeros((P, 2, 2), float)
 
     # unclear what this is for
     # Omat_E = np.zeros((P,2,2),float)
 
-    for p, a in it.product(range(P), range(na)):
+    for p, a in it.product(range(P), range(A)):
 
-        if (p+1) < P:
-            x1 = q1[p] - dja[0, a]
-            x1p = q1[p+1] - dja[0, a]
-            x2 = q2[p] - dja[1, a]
-            x2p = q2[p+1] - dja[1, a]
-        else:
-            x1 = q1[P-1] - dja[0, a]
-            x1p = q1[0] - dja[0, a]
-            x2 = q2[P-1] - dja[1, a]
-            x2p = q2[0] - dja[1, a]
+        x1 = q1[p] - dja[0, a]
+        x1p = q1[(p+1) % P] - dja[0, a]
+
+        x2 = q2[p] - dja[1, a]
+        x2p = q2[(p+1) % P] - dja[1, a]
 
         o_matrix[p, a, a] = np.exp(-tau*Ea_tilde[a])
-        o_matrix[p, a, a] *= np.exp(S1*(x1*x1p)-.5*C1*(x1**2+x1p**2))
-        o_matrix[p, a, a] *= np.exp(S2*(x2*x2p)-.5*C2*(x2**2+x2p**2))
+
+        # for i in range(N):
+        o_matrix[p, a, a] *= np.exp(S[0]*(x1*x1p)-.5*C[0]*(x1**2+x1p**2))
+        o_matrix[p, a, a] *= np.exp(S[1]*(x2*x2p)-.5*C[1]*(x2**2+x2p**2))
+
+        # o_matrix[p, a, a] *= np.exp(S1*(x1*x1p)-.5*C1*(x1**2+x1p**2))
+        # o_matrix[p, a, a] *= np.exp(S2*(x2*x2p)-.5*C2*(x2**2+x2p**2))
 
         # Omat_E[p,a,a]=Ea_tilde[a]+S1*(x1*x1p)*S1_prime-.5*C1*(x1**2+x1p**2)*C1_prime
         # Omat_E[p,a,a]+=S2*(x2*x2p)*S2_prime-.5*C2*(x2**2+x2p**2)*C2_prime
 
-    o_matrix = (F1*F2)*o_matrix
+    # o_matrix = (F1*F2)*o_matrix
+    o_matrix = np.prod(F)*o_matrix
 
     return o_matrix
 
 
-def calculate_m_matrix():
+def calculate_m_matrix(parameters, q2):
     """ x """
 
+    # unpack parameters
+    A = parameters['nof_surfaces']
+    P = parameters['P']
+    # T = parameters['T']
+    # beta = parameters['beta']
+    tau = parameters['tau']
+
     # M matrix
-    m_matrix=np.zeros((P,na,na),float)
+    m_matrix = np.zeros((P, A, A), float)
 
     # unclear what this is for
-    # Mmat_E=np.zeros((P,na,na),float)
+    # Mmat_E = np.zeros((P, A, A), float)
 
-    Vmat=np.zeros((na,na),float)
-    Vmat_diag=np.zeros((na,na),float)
-    # Vmat_diag_E=np.zeros((na,na),float)
+    Vmat = np.zeros((A, A), float)
+    Vmat_diag = np.zeros((A, A), float)
+    # Vmat_diag_E = np.zeros((A, A), float)
+
+    # for the specific model
+    if model == 'Displaced':
+        coeffiecent = displaced['gamma'][system_index]
+
+    if model == 'Jahn_Teller':
+        coeffiecent = jahn_teller['lambda'][system_index]
 
     for p in range(P):
 
-        if model=='Displaced':
-            Vmat[0,1]=displaced['gamma'][system_index]*q2[p]
-            Vmat[1,0]=Vmat[0,1]
+        Vmat[0, 1] = Vmat[1, 0] = coeffiecent * q2[p]
 
-        if model=='Jahn_Teller':
-            Vmat[0,1]=jahn_teller['lambda'][system_index]*q2[p]
-            Vmat[1,0]=Vmat[0,1]
+        Vval, Vvec = np.linalg.eigh(Vmat)
 
-        Vval, Vvec=np.linalg.eigh(Vmat)
+        for a in range(A):
+            Vmat_diag[a, a] = np.exp(-tau*Vval[a])
+            # Vmat_diag_E[a, a] = Vval[a]
 
-        for a in range(na):
-            Vmat_diag[a,a]=np.exp(-tau*Vval[a])
-            # Vmat_diag_E[a,a]=Vval[a]
+        Vmatp = np.dot(Vvec, np.dot(Vmat_diag, np.transpose(Vvec)))
+        # Vmatp_E = np.dot(Vvec,np.dot(Vmat_diag_E,np.transpose(Vvec)))
 
-        Vmatp=np.dot(Vvec,np.dot(Vmat_diag,np.transpose(Vvec)))
-        # Vmatp_E=np.dot(Vvec,np.dot(Vmat_diag_E,np.transpose(Vvec)))
-
-        for a in range(na):
-            for ap in range(na):
-                m_matrix[p,a,ap] = Vmatp[a,ap]
-                # Mmat_E[p,a,ap]=Vmatp_E[a,ap]
+        for a, ap in it.product(range(A), repeat=2):
+            m_matrix[p, a, ap] = Vmatp[a, ap]
+            # Mmat_E[p, a, ap] = Vmatp_E[a, ap]
 
     return m_matrix
 
 
-def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Sampling_type='GMD'):
+def prepare_models(parameters, sampling_type, model, system_index):
+    """ x """
+    # unpack parameters
+    A, N = parameters['nof_surfaces'], parameters['nof_modes']
 
-    # basis sizes (store in dictionary for easy passing to functions)
-    na = 2
-    nmodes = 2
+    frequencies = np.zeros(N)
+    frequencies_samp = np.zeros_like(frequencies)
 
-    if model == 'Displaced':
-        w1 = displaced['w1']
-        w2 = displaced['w2']
-
-    if model == 'Jahn_Teller':
-        w1 = jahn_teller['w1']
-        w2 = jahn_teller['w2']
-
-    logfile = open(str(model)+str(system_index)+'_MC.log', 'w')
-    logfile.write('Model: '+str(model)+'; System_index: '+str(system_index) + '\n')
-
-    # MC test
-    # reference displacement
-    da0_1 = 0.
-    da0_2 = 0.
-    da1_1 = 0.
-    da1_2 = 0.
+    displacement = np.zeros((A, N))
+    displacement_samp = np.zeros_like(displacement)
 
     if model == 'Displaced':
-        da0_1 = -displaced['lambda']/w1
-        da1_1 = displaced['lambda']/w1
+        frequencies[0] = displaced['w1']
+        frequencies[1] = displaced['w2']
 
-        w1_samp = w1
-        w2_samp = w2
+        mode_1_index = 0
 
-        da0_1_samp = -1.*displaced['lambda']/w1_samp
-        da1_1_samp = 1.*displaced['lambda']/w1_samp
-        # da0_1_samp = 0. # only displace q2
-        # da1_1_samp = 0.
-        # da0_2_samp = -displaced['gamma'][system_index]/w2_samp
-        # da1_2_samp = displaced['gamma'][system_index]/w2_samp
-        da0_2_samp = 0.
-        da1_2_samp = 0.
+        # compute the system's displacement (d^a_j = -g^aa_j / w_j)
+        # so since its +lambda*q1 for A=0 we flip the sign to -lambda*q1
+        # and similarly for A=1
+        displacement[0, mode_1_index] = -1.0 * displaced['lambda'] / frequencies[mode_1_index]
+        displacement[1, mode_1_index] = +1.0 * displaced['lambda'] / frequencies[mode_1_index]
 
-        Ea0 = displaced['energy'][0]
-        Ea1 = displaced['energy'][1]
+        # compute the rho/sampling displacement
+        if system_index == 0:
+            # special case
+            displacement_samp[0, mode_1_index] = -1.0 * displaced['lambda']
+            displacement_samp[1, mode_1_index] = +1.0 * displaced['lambda']
 
-        Delta0 = -.5*w1*(da0_1**2)
-        Delta1 = -.5*w1*(da1_1**2)
+            displacement_samp[:] /= frequencies_samp[mode_1_index]
 
-        Delta0_samp = -.5*w1_samp*(da0_1_samp**2)
-        Delta1_samp = -.5*w1_samp*(da1_1_samp**2)
+            # q2 contribution is zero for uncoupled system (system_index == 0)
 
-        # mode 2 sampling
-        Delta0_samp += -.5*w2_samp*(da0_2_samp**2)
-        Delta1_samp += -.5*w2_samp*(da1_2_samp**2)
+        elif 0 < system_index < 6:
+            # q1 contribution is zero for coupled systems (system_index >= 1)
 
-        Ea_tilde0 = Ea0+Delta0
-        Ea_tilde1 = Ea1+Delta1
+            mode_2_index = 1
+            displacement_samp[0, mode_2_index] = -1.0 * displaced['gamma'][system_index]
+            displacement_samp[1, mode_2_index] = +1.0 * displaced['gamma'][system_index]
 
-    Ea_uniform = np.zeros(2, float)
-    Ea_uniform[0] = displaced['energy'][0]
-    Ea_uniform[1] = displaced['energy'][1]
+            displacement_samp[:] /= frequencies_samp[mode_2_index]
 
-    Ea_tilde = np.zeros(2, float)
-    Ea_tilde[0] = Ea_tilde0
-    Ea_tilde[1] = Ea_tilde1
+        else:
+            raise Exception(f'Incorrect value for {system_index = }')
 
-    for a in range(na):
-        Ea_tilde[a] = Ea_tilde[a]-Ea_tilde[0]
+        # (E^aa)
+        energy_raw = displaced['energy'].copy()
+
+        # (Δ^a) shift in energy from completing the square eq 36
+        energy_shift = np.zeros(A)
+        energy_shift_samp = np.zeros_like(energy_shift)
+
+        """
+        for some reason PN only used the first mode in his original code??
+        should ask him about this, bug or intentional?
+        """
+
+        # for i in range(N):
+        #     energy_shift += -0.5 * frequencies[i] * (displacement[:, i]**2.0)
+
+        energy_shift += -0.5 * frequencies[0] * (displacement[:, 0]**2.0)
+        # energy_shift += -0.5 * frequencies[1] * (displacement[:, 1]**2.0)
+
+        energy_shift_samp += -0.5 * frequencies_samp[0] * (displacement_samp[:, 0]**2.0)
+        energy_shift_samp += -0.5 * frequencies_samp[1] * (displacement_samp[:, 1]**2.0)
+
+        # the shifted energy (E^aa + Δ^a)
+        Ea_tilde = energy_raw + energy_shift
 
     if model == 'Jahn_Teller':
-        da0_1 = -jahn_teller['lambda'][system_index]/w1
-        da1_1 = jahn_teller['lambda'][system_index]/w1
+        frequencies[0] = jahn_teller['w1']
+        frequencies[1] = jahn_teller['w2']
 
-    dja = np.zeros((nmodes, na), float)
-    dja_samp = np.zeros((nmodes, na), float)
+        mode_1_index = 0
+        displacement[0, mode_1_index] = -1.0 * jahn_teller['lambda'][system_index] / frequencies[mode_1_index]
+        displacement[1, mode_1_index] = +1.0 * jahn_teller['lambda'][system_index] / frequencies[mode_1_index]
 
-    # mode 1
-    dja[0, 0] = da0_1
-    dja[0, 1] = da1_1
+        # (E^aa)
+        energy_raw = np.full(shape=A, fill_value=jahn_teller['energy'][system_index])
 
-    # mode 2
-    dja[1, 0] = da0_2
-    dja[1, 1] = da1_2
+        # (Δ^a) shift in energy from completing the square eq 36
+        energy_shift = np.zeros(A)
+        energy_shift_samp = np.zeros_like(energy_shift)
 
-    # sampling parameters
-    # mode 1
-    dja_samp[0, 0] = da0_1_samp
-    dja_samp[0, 1] = da1_1_samp
-    # mode 2
-    dja_samp[1, 0] = da0_2_samp
-    dja_samp[1, 1] = da1_2_samp
+        energy_shift += -0.5 * frequencies[0] * (displacement[:, 0]**2.0)
+        # energy_shift += -0.5 * frequencies[1] * (displacement[:, 1]**2.0)
 
-    Ea_tilde0_samp = Ea0+Delta0_samp
-    Ea_tilde1_samp = Ea1+Delta1_samp
+        energy_shift_samp += -0.5 * frequencies_samp[0] * (displacement_samp[:, 0]**2.0)
+        energy_shift_samp += -0.5 * frequencies_samp[1] * (displacement_samp[:, 1]**2.0)
 
-    Ea_tilde_samp = np.zeros(2, float)
-    Ea_tilde_samp[0] = Ea_tilde0_samp
-    Ea_tilde_samp[1] = Ea_tilde1_samp
+        # the shifted energy (E^aa + Δ^a)
+        Ea_tilde = energy_raw + energy_shift
 
-    for a in range(na):
-        Ea_tilde_samp[a] = Ea_tilde_samp[a]-Ea_tilde_samp[0]
+    if sampling_type == 'Uniform':
 
-    P = 16
-    T = 300.
-    beta = 1./(kB*T)
-    tau = beta/float(P)
+        # energy for uniform sampling
+        Ea_uniform = displaced['energy'].copy()
 
-    def prepare_probability_distributions():
-        """ x """
-        # prepare probability distributions
-        P = 16
-        # D, gamma=0.08 Theta= 226.38994229156003  K model 2
-        T = 300.
+    # GMD or Direct
+    else:
+        # set E_0 = 0
+        Ea_tilde[:] -= Ea_tilde[0]
 
-        beta = 1./(kB*T)
-        tau = beta/float(P)
+        # flip?
+        flipped_displacement = np.zeros((N, A), float)
+        flipped_displacement_samp = np.zeros_like(flipped_displacement)
 
-        print('tau = ',tau)
-        logfile.write('P = '+str(P)+'\n')
-        logfile.write('tau (eV) = '+str(tau)+'\n')
-        logfile.write('beta (eV) = '+str(beta)+'\n')
+        for a, i in it.product(range(A), range(N)):
+            flipped_displacement[i, a] = displacement[a, i]
+            flipped_displacement_samp[i, a] = displacement_samp[a, i]
 
-        Prob_a = np.zeros(2, float)
-        Prob_e = np.zeros(2, float)
-        Prob_a_all=np.zeros(2, float)
-        a_norm = 0.
-        e_norm = 0.
-        a_norm_all = 0.
+        # the shifted energy (E^aa + Δ^a) for sampling
+        Ea_tilde_samp = energy_raw + energy_shift_samp
 
-        for a in range(na):
-            Prob_e[a] = np.exp(-tau*Ea_tilde[a])
-            Prob_a[a] = np.exp(-beta*(Ea_tilde_samp[a]))
-            Prob_a_all[a] = np.exp(-tau*(Ea_tilde_samp[a]))
-            #Prob_a[a] = np.exp(-beta*(Ea_uniform[a]))
-            a_norm += Prob_a[a]
-            e_norm += Prob_e[a]
-            a_norm_all += Prob_a_all[a]
+        # set E_0 = 0
+        Ea_tilde_samp[:] -= Ea_tilde_samp[0]
 
-        Prob_a = (1./a_norm)*Prob_a
-        Prob_e = (1./e_norm)*Prob_e
-        Prob_a_all = (1./a_norm_all)*Prob_a_all
-        logfile.write('Prob_a '+str(Prob_a)+'\n')
-        logfile.write('Prob_a_all '+str(Prob_a_all)+'\n')
+        if sampling_type == 'GMD' or sampling_type == 'GMD_reduced':
+            pass
 
-        return
+        elif sampling_type == 'Direct':
+            pass
 
-    rng = default_rng()
+    args = {
+        'Ea_tilde': Ea_tilde,
+        'Ea_tilde_samp': Ea_tilde_samp,
+        'frequencies': frequencies,
+        'frequencies_samp': frequencies_samp,
+        'flipped_displacement': flipped_displacement,
+        'flipped_displacement_samp': flipped_displacement_samp,
+    }
+
+    return args
+
+
+def prepare_probability_distributions(parameters, system_args):
+    """ x """
+
+    # unpack parameters
+    # P = parameters['P']
+    # T = parameters['T']
+    A = parameters['nof_surfaces']
+    beta = parameters['beta']
+    tau = parameters['tau']
+
+    Ea_tilde = system_args['Ea_tilde']
+    Ea_tilde_samp = system_args['Ea_tilde_samp']
+
+    # D, gamma=0.08 Theta= 226.38994229156003  K model 2
+
+    Prob_a = np.zeros(A)
+    Prob_e = np.zeros(A)
+    Prob_a_all = np.zeros(A)
+
+    Prob_e[:] = np.exp(-tau*Ea_tilde[:])
+    Prob_a[:] = np.exp(-beta*Ea_tilde_samp[:])
+    Prob_a_all[:] = np.exp(-tau*Ea_tilde_samp[:])
+
+    # Prob_a[a] = np.exp(-beta*(Ea_uniform[a]))
+
+    # normalize the probabilities
+    Prob_a /= np.sum(Prob_a)
+    Prob_e /= np.sum(Prob_e)
+    Prob_a_all /= np.sum(Prob_a_all)
+
+    d = {
+        'Prob_a': Prob_a,
+        'Prob_a_all': Prob_a_all,
+        'Prob_e': Prob_e,
+    }
+
+    return d
+
+
+def prepare_statistical_constants(parameters, rng, system_args, probs):
+    """ Calculate hyperbolic prefactors, means and variances. """
+
+    freq = system_args['frequencies']
+    freq_samp = system_args['frequencies_samp']
+
+    Ea_tilde_samp = system_args['Ea_tilde_samp']
+
+    # displacement (N x A) versus (A x N)
+    # dja = system_args['flipped_displacement']
+    dja_samp = system_args['flipped_displacement_samp']
+
+    # unpack parameters
+    A = parameters['nof_surfaces']
+    N = parameters['nof_modes']
+
+    P = parameters['P']
+    # T = parameters['T']
+    beta = parameters['beta']
+    tau = parameters['tau']
 
     # d/d tau
 
-    C1 = 1./np.tanh(tau*w1)
-    C2 = 1./np.tanh(tau*w2)
+    C = np.zeros(N)
+    C[:] = 1.0 / np.tanh(tau*freq[:])
 
-    C1_prime = -(w1/np.sinh(tau*w1)**2)
-    C2_prime = -(w2/np.sinh(tau*w2)**2)
+    C_prime = np.zeros(N)
+    C_prime[:] = -1.0 * (freq[:] / np.sinh(tau*freq[:])**2)
 
-    S1 = 1./np.sinh(tau*w1)
-    S2 = 1./np.sinh(tau*w2)
+    S = np.zeros(N)
+    S[:] = 1.0 / np.sinh(tau*freq[:])
 
-    S1_prime = -(w1*np.cosh(tau*w1)/(np.sinh(tau*w1)**2))
-    S2_prime = -(w2*np.cosh(tau*w2)/(np.sinh(tau*w2)**2))
+    S_prime = np.zeros(N)
+    S_prime[:] = -1.0 * (freq[:] * np.cosh(tau*freq[:]) / (np.sinh(tau*freq[:])**2))
 
     # -(a Cosh[a x] Csch[a x]^(3/2))/(2 Sqrt[2 Pi])
-    F1 = np.sqrt(S1/2./np.pi)
-    F2 = np.sqrt(S2/2./np.pi)
+
+    F = np.zeros(N)
+    F[:] = np.sqrt(S[:] / 2.0 / np.pi)
 
     # these don't get used?
-    # F1_prime =- (w1*np.cosh(tau*w1)*(1./np.sinh(tau*w1)**(3/2))/(2.*np.sqrt(2.*np.pi)))
-    # F2_prime =- (w2*np.cosh(tau*w2)*(1./np.sinh(tau*w2)**(3/2))/(2.*np.sqrt(2.*np.pi)))
 
-    C1_samp = 1./np.tanh(tau*w1_samp)
-    C2_samp = 1./np.tanh(tau*w2_samp)
+    F_prime = np.zeros(N)
+    F_prime[:] = freq[:] * np.cosh(tau*freq[:])
+    F_prime *= (1.0 / np.sinh(tau*freq[:])**(3/2))
+    F_prime /= (2.0 * np.sqrt(2.*np.pi))
 
-    S1_samp = 1./np.sinh(tau*w1_samp)
-    S2_samp = 1./np.sinh(tau*w2_samp)
+    # F1_prime =- (freq[0]*np.cosh(tau*freq[0])*(1./np.sinh(tau*freq[0])**(3/2))/(2.*np.sqrt(2.*np.pi)))
+    # F2_prime =- (freq[1]*np.cosh(tau*freq[1])*(1./np.sinh(tau*freq[1])**(3/2))/(2.*np.sqrt(2.*np.pi)))
+
+    C_samp = np.zeros(N)
+    C_samp[:] = 1. / np.tanh(tau*freq_samp[:])
+
+    S_samp = np.zeros(N)
+    S_samp[:] = 1. / np.sinh(tau*freq_samp[:])
 
     # these don't get used?
-    # F1_samp = np.sqrt(S1_samp/2./np.pi)
-    # F2_samp = np.sqrt(S2_samp/2./np.pi)
+    # F_samp = np.zeros(N)
+    # F_samp[:] = np.sqrt(S1_samp / 2.0 / np.pi)
 
     Bmat = build_b_matrix(P)
 
-    mean1 = np.zeros(P, float)
-    mean2 = np.zeros(P, float)
-    cov1inv = np.zeros((P, P), float)
-    cov2inv = np.zeros((P, P), float)
+    mean_array = np.zeros((N, P))
+
+    # build the covariance's as inverse
+    inv_cov_q1 = np.zeros((P, P), float)
+    inv_cov_q2 = np.zeros((P, P), float)
+
     for p in range(P):
-        cov1inv[p, p] = 2.*C1_samp
-        cov2inv[p, p] = 2.*C2_samp
+        inv_cov_q1[p, p] = 2.0 * C_samp[0]
+        inv_cov_q2[p, p] = 2.0 * C_samp[1]
+
         for pp in range(P):
-            cov1inv[p, pp] -= S1_samp*Bmat[p, pp]
-            cov2inv[p, pp] -= S2_samp*Bmat[p, pp]
+            inv_cov_q1[p, pp] -= S_samp[0] * Bmat[p, pp]
+            inv_cov_q2[p, pp] -= S_samp[1] * Bmat[p, pp]
 
-    cov1 = np.linalg.inv(cov1inv)
-    cov2 = np.linalg.inv(cov2inv)
+    # invert covariance matrices
+    cov_q1 = np.linalg.inv(inv_cov_q1)
+    cov_q2 = np.linalg.inv(inv_cov_q2)
 
-    outx1x2 = open('x1x2'+str(model)+str(system_index)+'.dat', 'w')
+    # file path
+    file_name = f"x12_{model}_{system_index}.dat"
+    path = join(output_dir, file_name)
 
     # recommended numpy random number initialization
     # initial conditions
@@ -358,46 +448,97 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Samp
     # try all zeros
     # sma initial condition for all methods
 
-    x1old = np.random.multivariate_normal(mean1, cov1)
-    x2old = np.random.multivariate_normal(mean2, cov2)
-    index = 0
-    a_old = rng.choice(na, P, p=Prob_a_all)
+    x_q1_old = np.random.multivariate_normal(mean_array[0, :], cov_q1)
+    x_q2_old = np.random.multivariate_normal(mean_array[1, :], cov_q2)
+
+    surface_index = 0  # ground state
+    a_old = rng.choice(A, P, p=probs['Prob_a_all'])
 
     for p in range(P):
         a_old[p] = 0
-        x1old[p] = 0.
-        x2old[p] = 0.
+        x_q1_old[p] = 0.0
+        x_q2_old[p] = 0.0
 
-    q1 = x1old+dja_samp[0, index]
-    q2 = x2old+dja_samp[1, index]
+    # continuous variables
+    q1 = x_q1_old + dja_samp[0, surface_index]
+    q2 = x_q2_old + dja_samp[1, surface_index]
 
-    pi_1 = np.exp(-.5*(np.dot(x1old, np.dot(cov1inv, x1old))))
-    pi_2 = np.exp(-.5*(np.dot(x2old, np.dot(cov2inv, x2old))))
+    # exponential component of normal distributions
+    xBx_q1 = np.dot(x_q1_old, np.dot(inv_cov_q1, x_q1_old))
+    xBx_q2 = np.dot(x_q2_old, np.dot(inv_cov_q2, x_q2_old))
 
+    pi_1 = np.exp(-0.5 * xBx_q1)
+    pi_2 = np.exp(-0.5 * xBx_q2)
+
+    # product of all the pi's (over the number of modes)
     wa_rhoa_old = pi_1*pi_2
-    wa_rhoa_old *= np.exp(-beta*Ea_tilde_samp[index])
 
-    wa_rhoa_old_all = np.exp(-.5*(np.dot(x1old, np.dot(cov1inv, x1old)))-.5*(np.dot(x2old, np.dot(cov2inv, x2old))))
+    # multiply by the exponential as per eq 47
+    wa_rhoa_old *= np.exp(-beta*Ea_tilde_samp[surface_index])
+
+    wa_rhoa_old_all = np.exp(-0.5 * (xBx_q1 + xBx_q2))
 
     # modified above for mode bead sampling
     for p in range(P):
-        wa_rhoa_old_all *= (-tau*Ea_tilde_samp[a_old[p]])
+        wa_rhoa_old_all *= (-tau * Ea_tilde_samp[a_old[p]])
+
+    d = {
+        'q1': q1,
+        'q2': q2,
+        'wa_rhoa_old': wa_rhoa_old,
+        'wa_rhoa_old': wa_rhoa_old,
+        'wa_rhoa_old_all': wa_rhoa_old_all,
+    }
+
+    return d
+
+
+def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, sampling_type='GMD'):
+
+    # basis sizes (store in dictionary for easy passing to functions)
+    parameters = {
+        'nof_surfaces': 2,
+        'nof_modes': 2,
+        'P': 16,
+        'T': 300.0,
+    }
+    parameters['beta'] = 1.0 / (kB*parameters['T'])
+    parameters['tau'] = parameters['beta'] / float(parameters['P'])
+
+    file_name = f"{model}_{system_index}_MC.log"
+    logfile = open(file_name, 'w')
+    logfile.write(f"Model: {model}; System index = {system_index}\n")
+    logfile.write(f"P = {parameters['P']}\n")
+    logfile.write(f"tau (eV) = {parameters['tau']}\n")
+    logfile.write(f"beta (eV) = {parameters['beta']}\n")
+
+    # our random number generator
+    rng = default_rng()
+
+    system_args = prepare_models(parameters, sampling_type, model, system_index)
+
+    prob_param = prepare_probability_distributions(parameters, system_args)
+
+    logfile.write(f"Prob_a = {prob_param['Prob_a']}\n")
+    logfile.write(f"Prob_a_all = {prob_param['Prob_a_all']}\n")
+
+    stat_props = prepare_statistical_constants(parameters, rng, system_args, prob_param)
 
     # ----------------------------- x ---------------------------------
 
-    o_matrix = calculate_o_matrix()
+    o_matrix = calculate_o_matrix(parameters, q1, q2, system_args, stat_props)
     m_matrix = calculate_m_matrix()
 
     # ----------------------------- Metropolis-Hastings loop ---------------------------------
+    A, N, P = parameters['nof_surfaces'], parameters['nof_modes'], parameters['P']
 
     # compute the initial g value for the MCMH loop
-    g_old = np.identity(na)
+    g_old = np.identity(A)
     for p in range(P):
         g_old = np.dot(g_old, np.dot(o_matrix[p], m_matrix[p]))
 
     # g calculate for state bead sampling
     g_old_scalar = 1.
-
 
     for p in range(P):
 
@@ -409,7 +550,6 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Samp
         exp1 = np.exp(eee1 + sss1 + sss2)
 
         g_old_scalar *= m * exp1
-
 
     accept = 0
 
@@ -489,6 +629,7 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Samp
                 # define neighbourhood beads
                 x_old, x_plus, x_minus = 0.0, 0.0, 0.0
 
+                # mode 1
                 if i == 0:
                     x_plus = q1[(p+1) % P]-dja[i, index_new]
                     x_minus = q1[(p-1) % P]-dja[i, index_new]
@@ -503,6 +644,7 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Samp
                     pi_new = np.exp(-((x_new-mean)**2)/(2.*sigma**2))
                     pi_old = np.exp(-((x_old-mean)**2)/(2.*sigma**2))
 
+                # mode 2
                 elif i == 1:
                     x_plus = q2[(p+1) % P]-dja[i, index_new]
                     x_minus = q2[(p-1) % P]-dja[i, index_new]
@@ -517,6 +659,7 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Samp
                     pi_new = np.exp(-((x_new-mean)**2)/(2.*sigma**2))
                     pi_old = np.exp(-((x_old-mean)**2)/(2.*sigma**2))
 
+                # surfaces
                 else:
                     # choose a surface
                     index_new = rng.choice(na, p=Prob_e)
@@ -529,19 +672,20 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Samp
                 return
 
         o_matrix_new = calculate_o_matrix(q1_new, q2_new)
-
         m_matrix = calculate_m_matrix(q2_new)
 
         g_new = np.dot(o_matrix_new[0], m_matrix[0])
-
         for p in range(1, P):
             g_new = np.dot(g_new, np.dot(o_matrix_new[p], m_matrix[p]))
 
         g_new_scalar = 1.
 
+        # compute the new scalar for the uniform approach
         for p in range(P):
+
             m_index = (p, a_new[p], a_new[(p+1) % P])
             o_index = (p, a_new[p], a_new[p])
+
             g_new_scalar *= m_matrix[m_index] * o_matrix_new[o_index]
 
         def compute_ratio():
@@ -602,137 +746,138 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, Samp
                 outx1x2.write(string)
 
     logfile.write('MC acceptance ratio = '+str(accept/N_total)+'\n')
-    logfile.close()# --------------------------------- Main --------------------------------------
+    logfile.close()
+# --------------------------------- Main --------------------------------------
 
 
-def main(model, system_index, mc_args):
-    """ x """
+# def main(model, system_index, mc_args):
+#     """ x """
 
-    # mc_args = {
-    #     'N_total': int(4e5),
-    #     'N_equilibration': 10,
-    #     'N_skip': int(1e3),
-    #     'Sampling_type': ['Uniform', 'GMD_reduced', 'GMD', 'Direct'][0],
-    # }
+#     # mc_args = {
+#     #     'N_total': int(4e5),
+#     #     'N_equilibration': 10,
+#     #     'N_skip': int(1e3),
+#     #     'Sampling_type': ['Uniform', 'GMD_reduced', 'GMD', 'Direct'][0],
+#     # }
 
-    # basis sizes (store in dictionary for easy passing to functions)
-    n1, n2, na = 10, 10, 2
-    basis = {'n1': n1, 'n2': n2, 'a': na}
+#     # basis sizes (store in dictionary for easy passing to functions)
+#     n1, n2, na = 10, 10, 2
+#     basis = {'n1': n1, 'n2': n2, 'a': na}
 
-    # total size of product basis
-    N = n1*n2*na
-    basis['N'] = N
+#     # total size of product basis
+#     N = n1*n2*na
+#     basis['N'] = N
 
-    # modes only basis size
-    # n12 = n1*n2
+#     # modes only basis size
+#     # n12 = n1*n2
 
-    h01, h02 = create_harmonic_matrices(basis)
+#     h01, h02 = create_harmonic_matrices(basis)
 
-    # create Discrete Variable Representation grid
-    dvr_h_terms, q_mats, grids, T_list = create_dvr_grid(h01, h02, basis)
+#     # create Discrete Variable Representation grid
+#     dvr_h_terms, q_mats, grids, T_list = create_dvr_grid(h01, h02, basis)
 
-    if fbr_flag:
-        # create Full Basis Representation h terms
-        fbr_h01 = np.diag(h01)
-        fbr_h02 = np.diag(h02)
-        fbr_h_terms = [fbr_h01, fbr_h02]
-    else:
-        fbr_h_terms = [None, None]
+#     if fbr_flag:
+#         # create Full Basis Representation h terms
+#         fbr_h01 = np.diag(h01)
+#         fbr_h02 = np.diag(h02)
+#         fbr_h_terms = [fbr_h01, fbr_h02]
+#     else:
+#         fbr_h_terms = [None, None]
 
-    args = (
-        N, dvr_h_terms, fbr_h_terms, grids, q_mats,
-        system_index, model, basis, fbr_flag
-    )
-    if not fbr_flag:
-        dvr_H_total = build_full_hamiltonian(*args)
-    else:
-        dvr_H_total, fbr_H_total = build_full_hamiltonian(*args)
+#     args = (
+#         N, dvr_h_terms, fbr_h_terms, grids, q_mats,
+#         system_index, model, basis, fbr_flag
+#     )
+#     if not fbr_flag:
+#         dvr_H_total = build_full_hamiltonian(*args)
+#     else:
+#         dvr_H_total, fbr_H_total = build_full_hamiltonian(*args)
 
-    k_max = 100
+#     k_max = 100
 
-    assert k_max < N, (
-        f'The number of requested eigenvalues/vectors {k_max = } '
-        f'must be strictly < the basis size {N = }'
-    )
+#     assert k_max < N, (
+#         f'The number of requested eigenvalues/vectors {k_max = } '
+#         f'must be strictly < the basis size {N = }'
+#     )
 
-    # diagonalize
-    # niter = 100
-    # evals, evecs = eigsh(A_total, k=k_max, which = 'SA', maxiter=niter)
-    evals, evecs = eigsh(dvr_H_total, k=k_max, which='SA')
+#     # diagonalize
+#     # niter = 100
+#     # evals, evecs = eigsh(A_total, k=k_max, which = 'SA', maxiter=niter)
+#     evals, evecs = eigsh(dvr_H_total, k=k_max, which='SA')
 
-    n_short = 5
-    np.set_printoptions(precision=16)
-    print(f"First {n_short} eigenvalues:\n{evals[0:n_short]}")
+#     n_short = 5
+#     np.set_printoptions(precision=16)
+#     print(f"First {n_short} eigenvalues:\n{evals[0:n_short]}")
 
-    if fbr_flag:
-        # compare norms
+#     if fbr_flag:
+#         # compare norms
 
-        dvr_norms = np.zeros(k_max)
-        for k in range(k_max):
-            dvr_norms[k] = np.sum(evecs[:, k]**2.0, axis=0)
+#         dvr_norms = np.zeros(k_max)
+#         for k in range(k_max):
+#             dvr_norms[k] = np.sum(evecs[:, k]**2.0, axis=0)
 
-        fbr_evals, fbr_evecs = eigsh(fbr_H_total, k=k_max, which='SA')
+#         fbr_evals, fbr_evecs = eigsh(fbr_H_total, k=k_max, which='SA')
 
-        fbr_norms = np.zeros(k_max)
-        for k in range(k_max):
-            fbr_norms[k] = np.sum(fbr_evecs[:, k]**2.0, axis=0)
+#         fbr_norms = np.zeros(k_max)
+#         for k in range(k_max):
+#             fbr_norms[k] = np.sum(fbr_evecs[:, k]**2.0, axis=0)
 
-        # compare norms
-        # print(f"{dvr_norms = }")
-        # print(f"{fbr_norms = }")
-        assert np.allclose(dvr_norms, fbr_norms), 'dvr and fbr norms do not agree'
-        assert np.allclose(dvr_norms, 1.0), 'norm is not 1!'
+#         # compare norms
+#         # print(f"{dvr_norms = }")
+#         # print(f"{fbr_norms = }")
+#         assert np.allclose(dvr_norms, fbr_norms), 'dvr and fbr norms do not agree'
+#         assert np.allclose(dvr_norms, 1.0), 'norm is not 1!'
 
-        # compare eigenvalues
-        delta_eigvals = evals - fbr_evals
-        print(f"{delta_eigvals = }")
-        print(f"{evals = }")
-        print(f"{fbr_evals = }")
-        import pdb; pdb.set_trace()
+#         # compare eigenvalues
+#         delta_eigvals = evals - fbr_evals
+#         print(f"{delta_eigvals = }")
+#         print(f"{evals = }")
+#         print(f"{fbr_evals = }")
+#         import pdb; pdb.set_trace()
 
-        assert np.allclose(evals, fbr_evals), 'dvr and fbr eigenvalues are different'
+#         assert np.allclose(evals, fbr_evals), 'dvr and fbr eigenvalues are different'
 
-        # end of fbr debug check
+#         # end of fbr debug check
 
-    thermo_props = calculate_thermo_props(evals, basis)
+#     thermo_props = calculate_thermo_props(evals, basis)
 
-    delta_E = {
-        'Displaced': evals[1] - evals[0],
-        'Jahn_Teller': evals[2] - evals[0],  # use next gap because Jahn_Teller is degenerate
-    }.get(model, 1.0)
-    assert delta_E != 1.0, 'not a supported model'
+#     delta_E = {
+#         'Displaced': evals[1] - evals[0],
+#         'Jahn_Teller': evals[2] - evals[0],  # use next gap because Jahn_Teller is degenerate
+#     }.get(model, 1.0)
+#     assert delta_E != 1.0, 'not a supported model'
 
-    # shifted_E = (evals[0:n_short] - evals[0])
-    theta = delta_E / kB
-    print(f"{theta = }")
-    # beta = 1. / (kB * theta)
-    # probs = np.exp(-beta * shifted_E)
-    # Z = np.sum(probs)
-    # probs /= Z
-    # print(f"At T={theta}K\nFirst {n_short} probabilities:\n{probs}")
+#     # shifted_E = (evals[0:n_short] - evals[0])
+#     theta = delta_E / kB
+#     print(f"{theta = }")
+#     # beta = 1. / (kB * theta)
+#     # probs = np.exp(-beta * shifted_E)
+#     # Z = np.sum(probs)
+#     # probs /= Z
+#     # print(f"At T={theta}K\nFirst {n_short} probabilities:\n{probs}")
 
-    if plotting:
-        # figure and axis dictionaries
-        fig_d, ax_d = {}, {}
+#     if plotting:
+#         # figure and axis dictionaries
+#         fig_d, ax_d = {}, {}
 
-        # instantiate the subplots
-        for name in ['EV', 'E', 'CV', 'S', 'A']:
-            fig_d[name], ax_d[name] = plt.subplots()
+#         # instantiate the subplots
+#         for name in ['EV', 'E', 'CV', 'S', 'A']:
+#             fig_d[name], ax_d[name] = plt.subplots()
 
-        labels = {
-            'Displaced': f"D, gamma={displaced['gamma'][system_index]}",
-            'Jahn_Teller': f"JT, E={jahn_teller['energy'][system_index]} lambda={jahn_teller['lambda'][system_index]}",
-        }.get(model, '')
+#         labels = {
+#             'Displaced': f"D, gamma={displaced['gamma'][system_index]}",
+#             'Jahn_Teller': f"JT, E={jahn_teller['energy'][system_index]} lambda={jahn_teller['lambda'][system_index]}",
+#         }.get(model, '')
 
-        print(labels, f"Theta={delta_E/eV_per_K} K")
+#         print(labels, f"Theta={delta_E/eV_per_K} K")
 
-        plot_thermo(ax_d, thermo_props, labels, k_max)
-        label_plots(fig_d, ax_d, model, system_index)
-    #
+#         plot_thermo(ax_d, thermo_props, labels, k_max)
+#         label_plots(fig_d, ax_d, model, system_index)
+#     #
 
-    # calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  k_max, basis)
+#     # calculate_distributions(model, system_index, delta_E, evals, evecs, grids, T_list,  k_max, basis)
 
-    monte_carlo_test(model, system_index, theta, basis)
+#     monte_carlo_test(model, system_index, theta, basis)
 
 
 def profiling_code(model, system_index, mc_args):
