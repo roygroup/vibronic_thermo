@@ -84,13 +84,16 @@ def build_b_matrix(basis_size):
     return Bmat
 
 
-def calculate_o_matrix(parameters, q1, q2, system_args, stat_props):
+def calculate_o_matrix(parameters, q_args, system_args, stat_props):
     """ calculate g without trace i.e. O matrix """
+
+    # unpack parameters
+    q1, q2 = q_args
 
     # unpack parameters
     A = parameters['nof_surfaces']
     # N = parameters['nof_modes']
-    P = parameters['P']
+    P = parameters['nof_beads']
     # T = parameters['T']
     # beta = parameters['beta']
     tau = parameters['tau']
@@ -137,12 +140,12 @@ def calculate_o_matrix(parameters, q1, q2, system_args, stat_props):
     return o_matrix
 
 
-def calculate_m_matrix(parameters, q2):
+def calculate_m_matrix(parameters, q2, model):
     """ x """
 
     # unpack parameters
     A = parameters['nof_surfaces']
-    P = parameters['P']
+    P = parameters['nof_beads']
     # T = parameters['T']
     # beta = parameters['beta']
     tau = parameters['tau']
@@ -184,7 +187,7 @@ def calculate_m_matrix(parameters, q2):
     return m_matrix
 
 
-def prepare_models(parameters, sampling_type, model, system_index):
+def prepare_models(parameters, model, system_index):
     """ x """
     # unpack parameters
     A, N = parameters['nof_surfaces'], parameters['nof_modes']
@@ -196,8 +199,12 @@ def prepare_models(parameters, sampling_type, model, system_index):
     displacement_samp = np.zeros_like(displacement)
 
     if model == 'Displaced':
+
         frequencies[0] = displaced['w1']
         frequencies[1] = displaced['w2']
+
+        frequencies_samp[0] = frequencies[0]
+        frequencies_samp[1] = frequencies[1]
 
         mode_1_index = 0
 
@@ -254,8 +261,12 @@ def prepare_models(parameters, sampling_type, model, system_index):
         Ea_tilde = energy_raw + energy_shift
 
     if model == 'Jahn_Teller':
+
         frequencies[0] = jahn_teller['w1']
         frequencies[1] = jahn_teller['w2']
+
+        frequencies_samp[0] = frequencies[0]
+        frequencies_samp[1] = frequencies[1]
 
         mode_1_index = 0
         displacement[0, mode_1_index] = -1.0 * jahn_teller['lambda'][system_index] / frequencies[mode_1_index]
@@ -277,35 +288,27 @@ def prepare_models(parameters, sampling_type, model, system_index):
         # the shifted energy (E^aa + Δ^a)
         Ea_tilde = energy_raw + energy_shift
 
-    if sampling_type == 'Uniform':
+    # set E_0 = 0
+    Ea_tilde[:] -= Ea_tilde[0]
 
-        # energy for uniform sampling
-        Ea_uniform = displaced['energy'].copy()
+    # flip?
+    flipped_displacement = np.zeros((N, A), float)
+    flipped_displacement_samp = np.zeros_like(flipped_displacement)
 
-    # GMD or Direct
-    else:
-        # set E_0 = 0
-        Ea_tilde[:] -= Ea_tilde[0]
+    for a, i in it.product(range(A), range(N)):
+        flipped_displacement[i, a] = displacement[a, i]
+        flipped_displacement_samp[i, a] = displacement_samp[a, i]
 
-        # flip?
-        flipped_displacement = np.zeros((N, A), float)
-        flipped_displacement_samp = np.zeros_like(flipped_displacement)
+    if parameters['sampling_type'] == 'Uniform':
+        Ea_tilde_samp = np.zeros_like(Ea_tilde)
 
-        for a, i in it.product(range(A), range(N)):
-            flipped_displacement[i, a] = displacement[a, i]
-            flipped_displacement_samp[i, a] = displacement_samp[a, i]
+    if parameters['sampling_type'] in ['GMD', 'GMD_reduced', 'Direct']:
 
         # the shifted energy (E^aa + Δ^a) for sampling
         Ea_tilde_samp = energy_raw + energy_shift_samp
 
         # set E_0 = 0
         Ea_tilde_samp[:] -= Ea_tilde_samp[0]
-
-        if sampling_type == 'GMD' or sampling_type == 'GMD_reduced':
-            pass
-
-        elif sampling_type == 'Direct':
-            pass
 
     args = {
         'Ea_tilde': Ea_tilde,
@@ -323,8 +326,6 @@ def prepare_probability_distributions(parameters, system_args):
     """ x """
 
     # unpack parameters
-    # P = parameters['P']
-    # T = parameters['T']
     A = parameters['nof_surfaces']
     beta = parameters['beta']
     tau = parameters['tau']
@@ -332,33 +333,33 @@ def prepare_probability_distributions(parameters, system_args):
     Ea_tilde = system_args['Ea_tilde']
     Ea_tilde_samp = system_args['Ea_tilde_samp']
 
-    # D, gamma=0.08 Theta= 226.38994229156003  K model 2
-
-    Prob_a = np.zeros(A)
+    # initialize
     Prob_e = np.zeros(A)
+    Prob_a = np.zeros(A)
     Prob_a_all = np.zeros(A)
 
-    Prob_e[:] = np.exp(-tau*Ea_tilde[:])
-    Prob_a[:] = np.exp(-beta*Ea_tilde_samp[:])
-    Prob_a_all[:] = np.exp(-tau*Ea_tilde_samp[:])
+    if parameters['sampling_type'] == 'Uniform':
+        Prob_e[:] = np.exp(-tau*Ea_tilde[:])
+        Prob_e /= np.sum(Prob_e)  # normalize
 
-    # Prob_a[a] = np.exp(-beta*(Ea_uniform[a]))
+    elif parameters['sampling_type'] in ['GMD', 'GMD_reduced', 'Direct']:
+        Prob_a = np.exp(-beta*Ea_tilde_samp[:])
+        Prob_a /= np.sum(Prob_a)  # normalize
 
-    # normalize the probabilities
-    Prob_a /= np.sum(Prob_a)
-    Prob_e /= np.sum(Prob_e)
-    Prob_a_all /= np.sum(Prob_a_all)
+    elif parameters['sampling_type'] == 'Direct':
+        Prob_a_all[:] = np.exp(-tau*Ea_tilde_samp[:])
+        Prob_a_all /= np.sum(Prob_a_all)  # normalize
 
     d = {
+        'Prob_e': Prob_e,
         'Prob_a': Prob_a,
         'Prob_a_all': Prob_a_all,
-        'Prob_e': Prob_e,
     }
 
     return d
 
 
-def prepare_statistical_constants(parameters, rng, system_args, probs):
+def prepare_statistical_constants(parameters, rng, system_args, probs, state_dict):
     """ Calculate hyperbolic prefactors, means and variances. """
 
     freq = system_args['frequencies']
@@ -366,15 +367,11 @@ def prepare_statistical_constants(parameters, rng, system_args, probs):
 
     Ea_tilde_samp = system_args['Ea_tilde_samp']
 
-    # displacement (N x A) versus (A x N)
-    # dja = system_args['flipped_displacement']
-    dja_samp = system_args['flipped_displacement_samp']
-
     # unpack parameters
-    A = parameters['nof_surfaces']
+    # A = parameters['nof_surfaces']
     N = parameters['nof_modes']
 
-    P = parameters['P']
+    P = parameters['nof_beads']
     # T = parameters['T']
     beta = parameters['beta']
     tau = parameters['tau']
@@ -442,50 +439,44 @@ def prepare_statistical_constants(parameters, rng, system_args, probs):
     file_name = f"x12_{model}_{system_index}.dat"
     path = join(output_dir, file_name)
 
-    # recommended numpy random number initialization
-    # initial conditions
-    # index=rng.choice(na,p=Prob_a)
-    # try all zeros
-    # sma initial condition for all methods
-
-    x_q1_old = np.random.multivariate_normal(mean_array[0, :], cov_q1)
-    x_q2_old = np.random.multivariate_normal(mean_array[1, :], cov_q2)
-
-    surface_index = 0  # ground state
-    a_old = rng.choice(A, P, p=probs['Prob_a_all'])
-
-    for p in range(P):
-        a_old[p] = 0
-        x_q1_old[p] = 0.0
-        x_q2_old[p] = 0.0
-
-    # continuous variables
-    q1 = x_q1_old + dja_samp[0, surface_index]
-    q2 = x_q2_old + dja_samp[1, surface_index]
+    # first step starts with all zeros
+    x_q1_old = state_dict['x_q1']
+    x_q2_old = state_dict['x_q2']
 
     # exponential component of normal distributions
     xBx_q1 = np.dot(x_q1_old, np.dot(inv_cov_q1, x_q1_old))
     xBx_q2 = np.dot(x_q2_old, np.dot(inv_cov_q2, x_q2_old))
 
-    pi_1 = np.exp(-0.5 * xBx_q1)
-    pi_2 = np.exp(-0.5 * xBx_q2)
+    wa_rhoa_old = 0.0
+    wa_rhoa_old_all = 0.0
 
-    # product of all the pi's (over the number of modes)
-    wa_rhoa_old = pi_1*pi_2
+    if parameters['sampling_type'] in ['GMD', 'GMD_reduced']:
 
-    # multiply by the exponential as per eq 47
-    wa_rhoa_old *= np.exp(-beta*Ea_tilde_samp[surface_index])
+        pi_1 = np.exp(-0.5 * xBx_q1)
+        pi_2 = np.exp(-0.5 * xBx_q2)
 
-    wa_rhoa_old_all = np.exp(-0.5 * (xBx_q1 + xBx_q2))
+        # product of all the pi's (over the number of modes)
+        wa_rhoa_old = pi_1*pi_2
 
-    # modified above for mode bead sampling
-    for p in range(P):
-        wa_rhoa_old_all *= (-tau * Ea_tilde_samp[a_old[p]])
+        surface_index = state_dict['global_surface_index']
+
+        # multiply by the exponential as per eq 47
+        wa_rhoa_old *= np.exp(-beta*Ea_tilde_samp[surface_index])
+
+    else:
+        index = state_dict['per_bead_surface_index']
+
+        wa_rhoa_old_all = np.exp(-0.5 * (xBx_q1 + xBx_q2))
+        # modified above for mode bead sampling
+        for p in range(P):
+            wa_rhoa_old_all *= (-tau * Ea_tilde_samp[index[p]])
 
     d = {
-        'q1': q1,
-        'q2': q2,
-        'wa_rhoa_old': wa_rhoa_old,
+        'F': F, 'S': S, 'C': C,
+        'F_prime': F_prime, 'S_prime': S_prime, 'C_prime': C_prime,
+        'mean_array': mean_array,
+        'cov_q1': cov_q1, 'cov_q2': cov_q2,
+        'inv_cov_q1': inv_cov_q1, 'inv_cov_q2': inv_cov_q2,
         'wa_rhoa_old': wa_rhoa_old,
         'wa_rhoa_old_all': wa_rhoa_old_all,
     }
@@ -493,222 +484,385 @@ def prepare_statistical_constants(parameters, rng, system_args, probs):
     return d
 
 
-def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, sampling_type='GMD'):
+def pick_new_state_dict():
+    """ x """
+
+    # this is how it would work when we are not doing the initialization
+    x_q1_old = np.random.multivariate_normal(mean_array[0, :], cov_q1)
+    x_q2_old = np.random.multivariate_normal(mean_array[1, :], cov_q2)
+
+    scalar_surface_index = rng.choice(A, P, p=probs['Prob_a_all'])
+    # gmd_surface_index = rng.choice(A, p=stat_props['Prob_a'])
+    gmd_surface_index = 0
+
+    return x
+
+
+def compute_gmd_g_matrix(parameters, o_matrix, m_matrix):
+    """ Compute g where Z = Tr[g(y)]. """
+
+    g = np.identity(parameters['nof_surfaces'])
+
+    for p in range(parameters['nof_beads']):
+        g = np.dot(g, np.dot(o_matrix[p], m_matrix[p]))
+
+    return g
+
+
+def compute_single_g_scalar(parameters, a_index, o_matrix_new, m_matrix):
+    """ Compute g where Z = Tr[g(y)]. """
+
+    P = parameters['nof_beads']
+    g_scalar = 1.0
+
+    # compute the new scalar for the uniform/direct approach
+    for p in range(P):
+
+        m_index = (p, a_index[p], a_index[(p+1) % P])
+        o_index = (p, a_index[p], a_index[p])
+
+        g_scalar *= m_matrix[m_index] * o_matrix_new[o_index]
+
+    return g_scalar
+
+
+def q_from_x(state_dict, system_args, probs):
+    """ x """
+
+    x_q1 = state_dict['x_q1']
+    x_q2 = state_dict['x_q2']
+
+    # displacement (N x A) versus (A x N)
+    # dja = system_args['flipped_displacement']
+    dja_samp = system_args['flipped_displacement_samp']
+
+    # continuous variables
+    surface_index = 0  # ground state
+    q1 = x_q1 + dja_samp[0, surface_index]
+    q2 = x_q2 + dja_samp[1, surface_index]
+
+    ell = [
+        q1,
+        q2,
+    ]
+
+    return ell
+
+
+def memory_address(x):
+    """ Return the memory address of `x` as hex code. """
+    return hex(id(x))
+
+
+def sampling_gmd(parameters, q_args_new, system_args, stat_props, rng):
+    """ x """
+
+    #  ----- unpack -----
+    A, P = parameters['nof_surfaces'], parameters['nof_beads']
+    # N =  parameters['nof_modes']
+    beta = parameters['beta']
+
+    print(memory_address(q_args_new[0]))
+
+    Ea_tilde_samp = system_args['Ea_tilde_samp']
+    # displacement (N x A) versus (A x N)
+    dja_samp = system_args['flipped_displacement_samp']
+
+    mean1 = stat_props['mean_array'][0, :]
+    mean2 = stat_props['mean_array'][1, :]
+
+    #  ----- do calculation -----
+    gmd_surface_index = rng.choice(A, p=stat_props['Prob_a'])
+
+    x1_new = np.random.multivariate_normal(mean1, stat_props['cov_q1'])
+    x2_new = np.random.multivariate_normal(mean2, stat_props['cov_q2'])
+
+    for p in range(P):
+        # for j in range(N):
+        q_args_new[0][p] = x1_new[p] + dja_samp[0, gmd_surface_index]
+        q_args_new[1][p] = x2_new[p] + dja_samp[1, gmd_surface_index]
+
+    pi_1 = np.exp(-.5*(np.dot(x1_new, np.dot(stat_props['inv_cov_q1'], x1_new))))
+    pi_2 = np.exp(-.5*(np.dot(x2_new, np.dot(stat_props['inv_cov_q2'], x2_new))))
+
+    wa_rhoa_new = np.exp(-beta*Ea_tilde_samp[gmd_surface_index])*pi_1*pi_2
+
+    return wa_rhoa_new, gmd_surface_index
+
+
+def sampling_direct(parameters, q_args_new, system_args, stat_props, rng):
+    """ x """
+
+    #  ----- unpack -----
+    A, P = parameters['nof_surfaces'], parameters['nof_beads']
+    # N =  parameters['nof_modes']
+    tau = parameters['tau']
+
+    Ea_tilde_samp = system_args['Ea_tilde_samp']
+    # displacement (N x A) versus (A x N)
+    dja_samp = system_args['flipped_displacement_samp']
+
+    mean1 = stat_props['mean_array'][0, :]
+    mean2 = stat_props['mean_array'][1, :]
+
+    #  ----- do calculation -----
+    direct_surface_index = rng.choice(A, P, p=stat_props['Prob_a_all'])
+
+    x1_new = np.random.multivariate_normal(mean1, stat_props['cov_q1'])
+    x2_new = np.random.multivariate_normal(mean2, stat_props['cov_q2'])
+
+    for p in range(P):
+        # for j in range(N):
+        q_args_new[0][p] = x1_new[p] + dja_samp[0, direct_surface_index[p]]
+        q_args_new[1][p] = x2_new[p] + dja_samp[1, direct_surface_index[p]]
+
+    wa_rhoa_new_all = np.exp(
+        -0.5 * (np.dot(x1_new, np.dot(stat_props['inv_cov_q1'], x1_new)))
+        +
+        -0.5 * (np.dot(x2_new, np.dot(stat_props['inv_cov_q2'], x2_new)))
+    )
+
+    for p in range(P):
+        wa_rhoa_new_all *= np.exp(-tau*Ea_tilde_samp[direct_surface_index[p]])
+
+    return wa_rhoa_new_all, direct_surface_index
+
+
+def sampling_uniform(parameters, q_args_new, q_args, system_args, stat_props):
+    """ Uniform move proposal's
+    This method moves a single bead of a single D.O.F.
+
+    # S1*(x*xp)-.5*C1*(x**2+xp**2))*S1*(x*xm)-.5*C1*(x**2+xm**2))
+    """
+
+    #  ----- unpack -----
+    A, N, P = parameters['nof_surfaces'], parameters['nof_modes'], parameters['nof_beads']
+
+    # displacement (N x A) versus (A x N)
+    dja = system_args['flipped_displacement']
+
+    # statistical coefficients
+    S, C = stat_props['S'], stat_props['C']
+
+    # store something??
+    # this seems to be useless since we overwrite the values immediately after?!?
+    # for p in range(P):
+    #     q1_new[p] = q1_old[p]
+    #     q2_new[p] = q2_old[p]
+    #     scalar_surface_index[p] = state_dict['scalar_a'][p]
+
+    # choose from one of the modes or the electronic surfaces
+    # if i == N that represents the electronic surfaces
+    i = np.random.randint(0, N+1)
+
+    # choose which bead to affect bead
+    p = np.random.randint(0, P)
+
+    # define neighbourhood beads
+    x_old, x_plus, x_minus = 0.0, 0.0, 0.0
+
+    #  ----- do calculation -----
+
+    # mode 1
+    if i == 0:
+        x_plus = q_args[0][(p+1) % P]-dja[i, scalar_surface_index]
+        x_minus = q_args[0][(p-1) % P]-dja[i, scalar_surface_index]
+
+        mean = (0.5 * S[0] * (x_plus + x_minus)) / C[0]
+        sigma = 1.0 / np.sqrt(2.0 * C[0])
+        x_new = np.random.normal(mean,  sigma)
+
+        q_args_new[0][p] = x_new + dja[i, scalar_surface_index]
+        x_old = q_args[0][p] - dja[i, gmd_surface_index]
+
+        pi_new = np.exp(-((x_new-mean)**2)/(2.*sigma**2))
+        pi_old = np.exp(-((x_old-mean)**2)/(2.*sigma**2))
+
+    # mode 2
+    elif i == 1:
+        x_plus = q_args[1][(p+1) % P]-dja[i, scalar_surface_index]
+        x_minus = q_args[1][(p-1) % P]-dja[i, scalar_surface_index]
+
+        mean = (0.5 * S[1] * (x_plus + x_minus)) / C[1]
+        sigma = 1.0 / np.sqrt(2.0 * C[1])
+        x_new = np.random.normal(mean,  sigma)
+
+        q_args_new[1][p] = x_new + dja[i, scalar_surface_index]
+        x_old = q_args[1][p] - dja[i, gmd_surface_index]
+
+        pi_new = np.exp(-((x_new - mean)**2) / (2.0 * sigma**2))
+        pi_old = np.exp(-((x_old - mean)**2) / (2.0 * sigma**2))
+
+    # surfaces
+    else:
+        # choose a surface
+        new_surface = rng.choice(A, p=stat_props['Prob_e'])
+
+        # update surface
+        scalar_surface_index[p] = new_surface
+        pi_new = stat_props['Prob_e'][new_surface]
+        pi_old = stat_props['Prob_e'][gmd_surface_index]
+
+    return pi_new, pi_old
+
+
+def main(model, system_index, mc_args):
+    """ x """
+
+    N_total = mc_args['N_total']
+    N_equilibration = mc_args['N_equilibration']
+    N_skip = mc_args['N_skip']
+    sampling_type = mc_args['sampling_type']
 
     # basis sizes (store in dictionary for easy passing to functions)
     parameters = {
+        'sampling_type': sampling_type,
         'nof_surfaces': 2,
         'nof_modes': 2,
-        'P': 16,
+        'nof_beads': 16,
         'T': 300.0,
     }
+
     parameters['beta'] = 1.0 / (kB*parameters['T'])
-    parameters['tau'] = parameters['beta'] / float(parameters['P'])
+    parameters['tau'] = parameters['beta'] / float(parameters['nof_beads'])
 
     file_name = f"{model}_{system_index}_MC.log"
     logfile = open(file_name, 'w')
     logfile.write(f"Model: {model}; System index = {system_index}\n")
-    logfile.write(f"P = {parameters['P']}\n")
+    logfile.write(f"P = {parameters['nof_beads']}\n")
     logfile.write(f"tau (eV) = {parameters['tau']}\n")
     logfile.write(f"beta (eV) = {parameters['beta']}\n")
 
     # our random number generator
     rng = default_rng()
 
-    system_args = prepare_models(parameters, sampling_type, model, system_index)
+    system_args = prepare_models(parameters, model, system_index)
 
-    prob_param = prepare_probability_distributions(parameters, system_args)
+    prob_params = prepare_probability_distributions(parameters, system_args)
 
-    logfile.write(f"Prob_a = {prob_param['Prob_a']}\n")
-    logfile.write(f"Prob_a_all = {prob_param['Prob_a_all']}\n")
+    logfile.write(f"Prob_a = {prob_params['Prob_a']}\n")
+    logfile.write(f"Prob_a_all = {prob_params['Prob_a_all']}\n")
 
-    stat_props = prepare_statistical_constants(parameters, rng, system_args, prob_param)
+    # initialize as zeros
+    state_dict = {
+        # mainly used for GMD
+        'global_surface_index': 0,
+        # used for Direct and Uniform sampling
+        'per_bead_surface_index': np.zeros(parameters['nof_beads'], int),
+        'x_q1': np.zeros(parameters['nof_beads'], float),
+        'x_q2': np.zeros(parameters['nof_beads'], float),
+    }
+
+    stat_props = prepare_statistical_constants(parameters, rng, system_args, prob_params, state_dict)
+
+    # to cut down on argument passing (temporary)
+    for key in ['Prob_e', 'Prob_a', 'Prob_a_all']:
+        stat_props[key] = prob_params[key]
+
+    q_args = q_from_x(state_dict, system_args, prob_params)
 
     # ----------------------------- x ---------------------------------
 
-    o_matrix = calculate_o_matrix(parameters, q1, q2, system_args, stat_props)
-    m_matrix = calculate_m_matrix()
+    o_matrix = calculate_o_matrix(parameters, q_args, system_args, stat_props)
+    m_matrix = calculate_m_matrix(parameters, q_args[1], model)
 
-    # ----------------------------- Metropolis-Hastings loop ---------------------------------
-    A, N, P = parameters['nof_surfaces'], parameters['nof_modes'], parameters['P']
+    # ----------------------------- prepare initial parameters ---------------------------------
+    A, N, P = parameters['nof_surfaces'], parameters['nof_modes'], parameters['nof_beads']
 
-    # compute the initial g value for the MCMH loop
-    g_old = np.identity(A)
-    for p in range(P):
-        g_old = np.dot(g_old, np.dot(o_matrix[p], m_matrix[p]))
+    # CALCULATE AN INITIAL g(x) value
 
-    # g calculate for state bead sampling
-    g_old_scalar = 1.
+    if sampling_type in ['GMD', 'GMD_reduced']:
+        # compute the initial g value for the MCMH loop
+        g_old = compute_gmd_g_matrix(parameters, o_matrix, m_matrix)
 
-    for p in range(P):
-
-        m = m_matrix[p, a_old[p], a_old[(p+1) % data.beads]]
-
-        eee1 = -tau*Ea_tilde[a_old[p]]
-        sss1 = S1*(x1*x1p)-.5*C1*(x1**2+x1p**2)
-        sss2 = S2*(x2*x2p)-.5*C2*(x2**2+x2p**2)
-        exp1 = np.exp(eee1 + sss1 + sss2)
-
-        g_old_scalar *= m * exp1
+    # if we are sampling based on specific states and beads
+    elif sampling_type in ['Direct', 'Uniform']:
+        g_old_scalar = compute_single_g_scalar(parameters, state_dict['per_bead_surface_index'], o_matrix, m_matrix)
 
     accept = 0
 
-    dq1, dq2 = 1.0, 1.0
-    q1_new, q2_new = q1.copy(), q2.copy()
-    pi_new, pi_old = 1.0, 1.0
+    # dq1, dq2 = 1.0, 1.0
 
-    a_new = a_old.copy()
-    g_new_scalar = g_old_scalar
-    wa_rhoa_new = wa_rhoa_old
-    wa_rhoa_new_all = wa_rhoa_old_all
+    q_args_new = np.zeros_like(q_args)
+    for i in range(N):
+        q_args_new[i] = q_args[i].copy()
 
-    index_new = index
+    # gmd_surface_index = 0
+    # uniform_index = 0
+    # uniform_new_a = np.zeros_like(state_dict['per_bead_surface_index'])
+    # direct_surface_index = np.zeros_like(state_dict['per_bead_surface_index'])
 
+    # g_new_scalar = g_old_scalar
+    wa_rhoa_new = stat_props['wa_rhoa_old']
+    wa_rhoa_new_all = stat_props['wa_rhoa_old_all']
+
+    # prepare the dictionary to store the Metropolis-Hastings values
+    cur_state = {}
+
+    if sampling_type in ['GMD', 'GMD_reduced']:
+        cur_state['wa_rhoa_old'] = stat_props['wa_rhoa_old'].copy()
+        cur_state['index'] = 0
+
+    if sampling_type in ['Direct', ]:
+        cur_state['g_scalar'] = 0.0
+        cur_state['wa_rhoa_old_all'] = stat_props['wa_rhoa_old_all'].copy()
+
+    if sampling_type in ['Uniform', ]:
+        cur_state['pi'] = 1.0
+
+    # ----------------------------- Metropolis-Hastings loop ---------------------------------
     step_count = 0
     for step in range(N_total):
 
-        if Sampling_type == 'GMD' or Sampling_type == 'GMD_reduced':
+        if sampling_type in ['GMD', 'GMD_reduced']:
 
-            def sampling_gmd():
-                """ x """
-                index_new = rng.choice(na, p=Prob_a)
-                x1_new = np.random.multivariate_normal(mean1, cov1)
-                x2_new = np.random.multivariate_normal(mean2, cov2)
+            # this updates `q_args_new` in-place
+            wa_rhoa_new, gmd_surface_index = sampling_gmd(parameters, q_args_new, system_args, stat_props, rng)
 
-                for p in range(P):
-                    q1_new[p] = x1_new[p]+dja_samp[0, index_new]
-                    q2_new[p] = x2_new[p]+dja_samp[1, index_new]
+            # gmd approach
+            o_matrix_new = calculate_o_matrix(parameters, q_args_new, system_args, stat_props)
+            m_matrix = calculate_m_matrix(parameters, q_args_new[1], model)
 
-                pi_1 = np.exp(-.5*(np.dot(x1_new, np.dot(cov1inv, x1_new))))
-                pi_2 = np.exp(-.5*(np.dot(x2_new, np.dot(cov2inv, x2_new))))
+            # compute the new g matrix for the GMD approach
+            g_new = compute_gmd_g_matrix(parameters, o_matrix_new, m_matrix)
 
-                wa_rhoa_new = np.exp(-beta*Ea_tilde_samp[index_new])*pi_1*pi_2
+            # compute ratio
+            if sampling_type == 'GMD':
+                new_index = (gmd_surface_index, gmd_surface_index)
+                old_index = (cur_state['index'], cur_state['index'])
+                g_ratio = g_new[new_index] / g_old[old_index]
+                sampling_ratio = wa_rhoa_old / wa_rhoa_new
+                ratio = g_ratio * sampling_ratio
 
-                return wa_rhoa_new
+            if sampling_type == 'GMD_reduced':
+                ratio = np.trace(g_new)*stat_props['wa_rhoa_old']/(np.trace(g_old)*wa_rhoa_new)
 
-        elif Sampling_type == 'Direct':
+        elif sampling_type == 'Direct':
 
-            def sampling_direct():
-                """ x """
+            # this updates `q_args_new` in-place
+            wa_rhoa_new_all, direct_new_a = sampling_direct(parameters, q_args_new, system_args, stat_props, rng)
 
-                x1_new = np.random.multivariate_normal(mean1, cov1)
-                x2_new = np.random.multivariate_normal(mean2, cov2)
-                a_new = rng.choice(na, P, p=Prob_a_all)
+            # compute the new g scalar
+            g_new_scalar = compute_single_g_scalar(parameters, direct_new_a, o_matrix_new, m_matrix)
 
-                for p in range(P):
-                    q1_new[p] = x1_new[p]+dja_samp[0, a_new[p]]
-                    q2_new[p] = x2_new[p]+dja_samp[1, a_new[p]]
+            # compute ratio
+            ratio_num = g_new_scalar*stat_props['wa_rhoa_old_all']
+            ratio_denom = g_old_scalar*wa_rhoa_new_all
+            ratio = ratio_num/ratio_denom
 
-                wa_rhoa_new_all = np.exp(-.5*(np.dot(x1_new, np.dot(cov1inv, x1_new)))-.5*(np.dot(x2_new, np.dot(cov2inv, x2_new))))
+        elif sampling_type == 'Uniform':
 
-                for p in range(P):
-                    wa_rhoa_new_all *= np.exp(-tau*Ea_tilde_samp[a_new[p]])
+            # this updates `q_args_new` in-place
+            pi_new, pi_old, uniform_new_a, uniform_index = sampling_uniform(parameters, q_args_new, q_args, system_args, stat_props, rng)
 
-                return wa_rhoa_new
+            # compute the new g scalar
+            g_new_scalar = compute_single_g_scalar(parameters, uniform_new_a, o_matrix_new, m_matrix)
 
-        elif Sampling_type == 'Uniform':
+            # compute ratio
+            ratio_num = g_new_scalar*pi_old
+            ratio_denom = g_old_scalar*pi_new
+            ratio = ratio_num/ratio_denom
 
-            def sampling_uniform():
-                """ Uniform move proposal's
-                This method moves a single bead of a single D.O.F.
-                """
-
-                # S1*(x*xp)-.5*C1*(x**2+xp**2))*S1*(x*xm)-.5*C1*(x**2+xm**2))
-
-                # store something??
-                for p in range(P):
-                    q1_new[p] = q1[p]
-                    q2_new[p] = q2[p]
-                    a_new[p] = a_old[p]
-
-                # choose from one of the modes or the electronic surfaces
-                i = np.random.randint(0, nmodes+1)
-
-                p = np.random.randint(0, P)  # choose a bead
-
-                # define neighbourhood beads
-                x_old, x_plus, x_minus = 0.0, 0.0, 0.0
-
-                # mode 1
-                if i == 0:
-                    x_plus = q1[(p+1) % P]-dja[i, index_new]
-                    x_minus = q1[(p-1) % P]-dja[i, index_new]
-
-                    mean = (0.5*S1*(x_plus + x_minus))/C1
-                    sigma = 1./np.sqrt(2.*C1)
-
-                    x_new = np.random.normal(mean,  sigma)
-                    q1_new[p] = x_new + dja[i, index_new]
-                    x_old = q1[p] - dja[i, index]
-
-                    pi_new = np.exp(-((x_new-mean)**2)/(2.*sigma**2))
-                    pi_old = np.exp(-((x_old-mean)**2)/(2.*sigma**2))
-
-                # mode 2
-                elif i == 1:
-                    x_plus = q2[(p+1) % P]-dja[i, index_new]
-                    x_minus = q2[(p-1) % P]-dja[i, index_new]
-
-                    mean = (0.5*S2*(x_plus + x_minus))/C2
-                    sigma = 1./np.sqrt(2.*C2)
-
-                    x_new = np.random.normal(mean,  sigma)
-                    q2_new[p] = x_new + dja[i, index_new]
-                    x_old = q2[p] - dja[i, index]
-
-                    pi_new = np.exp(-((x_new-mean)**2)/(2.*sigma**2))
-                    pi_old = np.exp(-((x_old-mean)**2)/(2.*sigma**2))
-
-                # surfaces
-                else:
-                    # choose a surface
-                    index_new = rng.choice(na, p=Prob_e)
-
-                    # update surface
-                    a_new[p] = index_new
-                    pi_new = Prob_e[index_new]
-                    pi_old = Prob_e[index]
-
-                return
-
-        o_matrix_new = calculate_o_matrix(q1_new, q2_new)
-        m_matrix = calculate_m_matrix(q2_new)
-
-        g_new = np.dot(o_matrix_new[0], m_matrix[0])
-        for p in range(1, P):
-            g_new = np.dot(g_new, np.dot(o_matrix_new[p], m_matrix[p]))
-
-        g_new_scalar = 1.
-
-        # compute the new scalar for the uniform approach
-        for p in range(P):
-
-            m_index = (p, a_new[p], a_new[(p+1) % P])
-            o_index = (p, a_new[p], a_new[p])
-
-            g_new_scalar *= m_matrix[m_index] * o_matrix_new[o_index]
-
-        def compute_ratio():
-            """ x """
-            ratio = 1.
-
-            if Sampling_type == 'GMD':
-                ratio = g_new[index_new, index_new]/g_old[index, index]*wa_rhoa_old/wa_rhoa_new
-
-            if Sampling_type == 'GMD_reduced':
-                ratio = np.trace(g_new)*wa_rhoa_old/(np.trace(g_old)*wa_rhoa_new)
-
-            if Sampling_type == 'Direct':
-                ratio_num = g_new_scalar*wa_rhoa_old_all
-                ratio_denom = g_old_scalar*wa_rhoa_new_all
-                ratio = ratio_num/ratio_denom
-
-            if Sampling_type == 'Uniform':
-                ratio_num = g_new_scalar*pi_old
-                ratio_denom = g_old_scalar*pi_new
-                ratio = ratio_num/ratio_denom
-
-            return ratio
 
         # finally we can accept OR reject the proposed new state
 
@@ -724,7 +878,7 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, samp
                 q2[p] = q2_new[p]
                 a_old[p] = a_new[p]
 
-            index = index_new
+            surface_index = surface_index_new
 
             for a, ap in it.product(range(na), repeat=2):
                 g_old[a, ap] = g_new[a, ap]
@@ -741,7 +895,7 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, samp
 
                 # string = ' '.join([str(step_count), str(q1[p]), str(q2[p]), str(index), str(a_old[p]), str(ratio)]) + '\n'
 
-                string = f"{step_count} {q1[p]} {q2[p]} {index} {a_old[p]} {ratio}\n"
+                string = f"{step_count} {q1[p]} {q2[p]} {surface_index} {a_old[p]} {ratio}\n"
 
                 outx1x2.write(string)
 
@@ -757,7 +911,7 @@ def main(model, system_index, N_total=10000, N_equilibration=100, N_skip=1, samp
 #     #     'N_total': int(4e5),
 #     #     'N_equilibration': 10,
 #     #     'N_skip': int(1e3),
-#     #     'Sampling_type': ['Uniform', 'GMD_reduced', 'GMD', 'Direct'][0],
+#     #     'sampling_type': ['Uniform', 'GMD_reduced', 'GMD', 'Direct'][0],
 #     # }
 
 #     # basis sizes (store in dictionary for easy passing to functions)
@@ -938,7 +1092,7 @@ if (__name__ == "__main__"):
         'N_total': int(4e5),
         'N_equilibration': 10,
         'N_skip': int(1e3),
-        'Sampling_type': ['Uniform', 'GMD_reduced', 'GMD', 'Direct'][0],
+        'sampling_type': ['Uniform', 'GMD_reduced', 'GMD', 'Direct'][2],
     }
 
     # profiling_code(model, system_index, mc_args)
