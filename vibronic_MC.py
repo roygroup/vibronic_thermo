@@ -454,8 +454,8 @@ def prepare_statistical_constants(parameters, cur_state, system_args):
     xBx_q1 = np.dot(x_q1, np.dot(inv_cov_q1, x_q1))
     xBx_q2 = np.dot(x_q2, np.dot(inv_cov_q2, x_q2))
 
-    wa_rhoa_old = 0.0
-    wa_rhoa_old_all = 0.0
+    wa_rhoa_old = None
+    wa_rhoa_old_all = None
 
     if parameters['sampling_type'] in ['GMD', 'GMD_reduced']:
 
@@ -470,14 +470,16 @@ def prepare_statistical_constants(parameters, cur_state, system_args):
         # multiply by the exponential as per eq 47
         wa_rhoa_old *= np.exp(-beta*Ea_tilde_samp[surface_index])
 
-    else:
+    elif parameters['sampling_type'] in ['Direct', 'Uniform']:
         index = cur_state['per_bead_surface_index']
 
         wa_rhoa_old_all = np.exp(-0.5 * (xBx_q1 + xBx_q2))
 
         # modified above for mode bead sampling
         for p in range(P):
-            wa_rhoa_old_all *= (-tau * Ea_tilde_samp[index[p]])
+            wa_rhoa_old_all *= np.exp(-tau * Ea_tilde_samp[index[p]])
+    else:
+        raise Exception
 
     d = {
         'F': F, 'S': S, 'C': C,
@@ -899,9 +901,19 @@ def main(model, system_index, mc_args, file_name):
             g_new_scalar = compute_single_g_scalar(parameters, direct_new_a, o_matrix_new, m_matrix)
 
             # compute ratio
+
+            # fixes very small g and/or wa_rhoa
             g_ratio = g_new_scalar / cur_state['g_scalar']
             sampling_ratio = stat_props['wa_rhoa_old_all'] / wa_rhoa_new_all
             ratio = g_ratio * sampling_ratio
+            # print(f"{g_ratio = }")
+            # print(f"{sampling_ratio = }")
+            # print(f"g/g * r/r {ratio = }")
+
+            # don't do this when g_new_scalar is very small
+            # ratio_num = g_new_scalar * stat_props['wa_rhoa_old_all']
+            # ratio_denom = cur_state['g_scalar'] * wa_rhoa_new_all
+            # ratio = ratio_num * ratio_denom
 
         elif sampling_type == 'Uniform':
 
@@ -976,16 +988,16 @@ def main(model, system_index, mc_args, file_name):
 
                 if sampling_type in ['GMD', 'GMD_reduced']:
                     a_index = cur_state['global_surface_index']
-                    string = f"{step_count} {q1[p]} {q2[p]} {a_index} {ratio}\n"
+                    string = f"{step_count} {q1[p]} {q2[p]} {a_index} {ratio:.4e}\n"
 
                 if sampling_type in ['Direct', ]:
                     a_per_p_index = cur_state['per_bead_surface_index']
-                    string = f"{step_count} {q1[p]} {q2[p]} {a_per_p_index[p]} {ratio}\n"
+                    string = f"{step_count} {q1[p]} {q2[p]} {a_per_p_index[p]} {ratio:.4e}\n"
 
                 if sampling_type in ['Uniform', ]:
                     a_index = cur_state['global_surface_index']
                     a_per_p_index = cur_state['per_bead_surface_index']
-                    string = f"{step_count} {q1[p]} {q2[p]} {a_index} {a_per_p_index[p]} {ratio}\n"
+                    string = f"{step_count} {q1[p]} {q2[p]} {a_index} {a_per_p_index[p]} {ratio:.4e}\n"
 
                 logfile.write(string)
 
